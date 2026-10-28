@@ -1,0 +1,63 @@
+{
+  "name": "agentic-sync",
+  "version": "0.0.0",
+  "description": "Live edits for people and agents on one document, with offline support.",
+  "keywords": [
+    "yjs",
+    "crdt",
+    "realtime",
+    "collaboration",
+    "presence",
+    "offline",
+    "agents",
+    "durable-objects",
+    "cloudflare",
+    "mcp"
+  ],
+  "license": "MIT",
+  "author": "Pooria Arab",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pooriaarab/agentic-sync.git"
+  },
+  "type": "module",
+  "private": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "mcpName": "io.github.pooriaarab/agentic-sync",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "agentic-sync": "./dist/cli.js",
+    "agentic-sync-mcp": "./dist/mcp-bin.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}
