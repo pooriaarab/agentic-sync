@@ -1,10 +1,12 @@
 {
-  // Sample worker config. Rename agentic-sync on clone, then run
-  // wrangler deploy from the pack root.
+  // Sample config. A host copies this next to its own worker, which calls
+  // createSyncWorker with an authorize hook and re-exports SyncRoom.
   "name": "agentic-sync",
   "main": "src/worker.ts",
   "compatibility_date": "2026-01-01",
-  "vars": {
-    "PACK_NAME": "agentic-sync"
-  }
+  "durable_objects": {
+    "bindings": [{ "name": "SYNC_ROOM", "class_name": "SyncRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SyncRoom"] }],
+  "vars": { "SYNC_JURISDICTION": "eu" }
 }

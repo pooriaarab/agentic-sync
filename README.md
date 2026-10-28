@@ -7,33 +7,107 @@
 
 Live edits for people and agents on one document, with offline support.
 
-> Status: scaffold. This repository holds the starter code only. It is not on npm
-> yet, and none of the features below work yet.
+> Status: early. The sync server works. The client, offline support, version
+> history, CLI, and MCP server are not built yet. The package is not on npm yet.
 
-## Planned features
+## Features
 
-- Yjs documents that many people and agents edit at once.
-- Live cursors and presence, with agents shown as peers.
-- Offline edits in the browser that merge when you reconnect.
-- A sync server on Cloudflare Durable Objects, behind a port you can swap.
-- Version history with named snapshots and restore.
-- A headless client so an agent can join a document from Node.
+- A sync server on Cloudflare Durable Objects. One object holds one document.
+- The standard Yjs protocol (`y-websocket`), so a stock Yjs client can connect.
+- Presence relay: peers see each other's awareness state. The server sets the
+  `kind` of each state from the grant, and the `name` when the grant has one.
+  A client cannot change either. The first socket that announces a client id
+  owns it. Only that socket, or a new socket of the same principal, can
+  update or remove it.
+- Storage in the object. Updates append to a log. Every 50 updates (set
+  `SYNC_COMPACT_EVERY`) the log folds into one snapshot.
+- WebSocket hibernation. An idle document costs nothing.
+- Roles. Owners and editors write. Commenters and viewers only read. The server
+  drops their updates and answers with a permission-denied message.
+- Author labels. Each update keeps the kind of principal that wrote it. The
+  API lists the contributors and marks the machine-made ones.
+- Data residency. Set `SYNC_JURISDICTION=eu` to pin documents to the EU.
+- No outbound calls. The server loads no CDN assets and sends no telemetry.
 
-## Surfaces
+## Use the Worker
 
-One package gives you each way in:
+You own sign-in. Pass an `authorize` hook. It returns a grant, or `null` to
+refuse.
 
-- **Library and SDK**: `import { ... } from "agentic-sync"`.
-- **CLI**: `npx agentic-sync --help`.
-- **MCP server**: `npx agentic-sync mcp`, for Claude Code and other MCP clients.
-- **HTTP API**: a Cloudflare Worker you deploy to your own account.
-- **Web UI**: a small app served by the same Worker.
+```ts
+import { createSyncWorker } from "agentic-sync/worker";
+export { SyncRoom } from "agentic-sync/worker";
+
+export default createSyncWorker({
+  authorize: async (request, docId) => {
+    const user = await mySession(request); // your code
+    if (!user) return null;
+    return {
+      principal: { id: user.id, kind: "human" },
+      role: await myRoleFor(user, docId), // owner, editor, commenter, viewer
+      name: user.displayName, // optional. Shown in presence in place of the client's name.
+    };
+  },
+});
+```
+
+Copy `wrangler.jsonc` for the Durable Object binding and the migration.
+
+| Route | Use |
+| --- | --- |
+| `GET /api/v1/docs/:id/ws` | Upgrade to a WebSocket. Speaks the Yjs protocol. |
+| `GET /api/v1/docs/:id` | Read the role, jurisdiction, update count, compaction count, and contributors. |
+| `GET /health` | Check that the Worker runs. |
+
+A document id matches `[A-Za-z0-9_-]{1,128}`. Ids are case sensitive.
+
+An agent kind is one of `agent_of_human`, `agent_of_agent`, `agent`, or
+`user_token`. Only `human` is not machine-made.
+
+## Swap the server
+
+The Worker talks to the server through the `Realtime` interface. It has two
+methods: `connect` and `meta`. The Cloudflare adapter implements it with Durable
+Objects. A Node Yjs server on an EU host can implement it too. The wire
+protocol helpers in `agentic-sync` (`readMessage`, `AwarenessRelay`) are plain
+TypeScript with no Cloudflare code.
+
+## Limits
+
+- One snapshot or update must stay under 2 MB (Durable Object storage limit).
+  The server closes a connection that sends a message over 1 MiB. It refuses
+  an update that would take the document past 1.5 MiB, and answers with a
+  permission-denied message.
+- Presence limits: one socket owns up to 8 client ids, all sockets of one
+  principal together own up to 16, and one document holds up to 256 presence
+  entries. One state is up to 8192 characters. A socket that breaks a limit,
+  sends a state that is not a JSON object, or uses an id that belongs to
+  another principal gets closed with code 1008.
+- A full document refuses new presence entries. The socket stays open and
+  document sync keeps working. The server sends a permission-denied message
+  with the reason `presence is full`. Entries that already exist keep updating.
+- A new socket of the same principal can take over a client id. The server
+  closes the old socket with code 4001. This lets a client reconnect before the
+  server notices that the old connection is dead.
+- A jurisdiction is part of the object id. Set it before the first write.
+  Changing it later points at an empty document.
+- Presence lives in memory. After a hibernation the server forgets it until the
+  clients send their next heartbeat, within about 15 seconds.
+- The server stores the author of each update. After compaction it keeps the
+  set of all authors, not the author of each single update.
+- The grant is fixed for the life of a socket. A role change or a revocation
+  applies when the client reconnects.
+- The local `wrangler dev` cannot place objects in a jurisdiction. Test
+  placement on a deployed Worker.
+- If you sign in with cookies, check the `Origin` header in `authorize`.
 
 ## Develop
 
+Run these on a machine you trust. The end-to-end test starts `wrangler dev`.
+
 ```sh
 npm ci
-npm run build && npm run typecheck && npm test
+npm run ci:local
 ```
 
 ## License

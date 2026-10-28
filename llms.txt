@@ -4,12 +4,10 @@ Live edits for people and agents on one document, with offline support.
 
 Keywords: yjs,crdt,realtime,collaboration,presence,offline,agents,durable-objects,cloudflare,mcp.
 
-- SDK: import { summarizeText, dispatchText } from "agentic-sync".
-- CLI: agentic-sync summary --text "...".
-- MCP: run agentic-sync mcp, then call summarize_text.
+- Worker: createSyncWorker({ authorize }) from "agentic-sync/worker".
+- Protocol: connect a Yjs client to /api/v1/docs/:id/ws.
 
 ## Docs
 
 - README: https://github.com/pooriaarab/agentic-sync
-- Core contract: https://github.com/pooriaarab/agentic-sync/blob/main/docs/agentic-core.md
 - License: MIT

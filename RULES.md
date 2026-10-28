@@ -1,13 +1,10 @@
 # agentic-sync rules
 
-These rules bind every run of agentic-sync. They also bind
-agents that drive this pack over MCP.
+These rules bind every run of agentic-sync. They also bind agents that edit
+a document through it.
 
-1. Preview before you act. Run each dispatch with dry run first.
-2. Respect guards. A denied call stays denied.
-3. Report failures as failures. Adapters throw, and callers surface
-   the error. No silent success follows a failed call.
-4. Count the cost. Read the cost report before you close a task.
-5. Keep quiet hours. The pack refuses routes inside the window.
-
-Pack: Live edits for people and agents on one document, with offline support. Keywords: yjs,crdt,realtime,collaboration,presence,offline,agents,durable-objects,cloudflare,mcp.
+1. Connect with a principal. Every edit has an author kind.
+2. Respect the role. A read-only role cannot write, and the server drops its updates.
+3. Report a permission-denied reply as a failure. Do not retry the same update.
+4. Label machine-made edits. Do not change your principal kind.
+5. Do not put personal data in presence states.

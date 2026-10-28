@@ -4,37 +4,24 @@ Live edits for people and agents on one document, with offline support.
 
 ## Mental model
 
-Text goes in. Stats or a route receipt come out. One core serves
-all three faces, so each face returns the same shape.
+One Durable Object holds one Yjs document. Clients connect over a WebSocket
+and speak the standard `y-websocket` protocol. The host app decides who may
+connect and with what role.
 
-## The three faces
+## What exists now
 
-- SDK: `import { summarizeText } from "agentic-sync"`.
-- CLI: `npx agentic-sync summary --text "..."`.
-- MCP: `npx agentic-sync mcp`, then call a tool below.
+- `agentic-sync/worker`: `createSyncWorker({ authorize })` and `SyncRoom`.
+- `agentic-sync`: protocol helpers, the `Realtime` interface, and the types.
 
-Keywords: yjs,crdt,realtime,collaboration,presence,offline,agents,durable-objects,cloudflare,mcp.
-
-## MCP tools
-
-| Tool | Use it for |
-| --- | --- |
-| summarize_text | Count chars, words, lines, top words. |
-| dispatch_text | Route one text. Pass dryRun to preview. |
-| get_cost_report | Read session cost totals. |
-
-## The loop
-
-1. Discover the tools with `tools/list`.
-2. Run `summarize_text` on a sample.
-3. Preview a route with `dispatch_text` and dryRun true.
-4. Run the real route when the preview looks right.
-5. Read `get_cost_report` and state the cost.
+The client, offline support, version history, CLI, and MCP server come later.
 
 ## Rules
 
-- Preview with dry run before each real dispatch.
-- Stop when a guard denies the call. State the reason.
-- Never retry a denied call with changed text to dodge a guard.
-- Report adapter errors as errors. Never present them as success.
-- State the cost report before you claim the task is done.
+- Do not add auth to this package. The host passes `authorize`.
+- Keep Cloudflare code in `src/cloudflare/` and `src/worker.ts`. Keep `src/core/`
+  free of it, so a Node server can reuse it.
+- Keep the author kind on every stored update and snapshot.
+- Make no outbound calls. No CDN, no analytics, no telemetry.
+- Never lowercase a document id. Ids are case sensitive.
+- Never log document content or personal data.
+- Test with the end-to-end suite in `e2e/`. It runs the real Worker.

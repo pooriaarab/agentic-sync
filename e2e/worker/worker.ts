@@ -1,0 +1,23 @@
+import { createSyncWorker } from "../../src/worker.js";
+import type { Grant } from "../../src/core/types.js";
+
+export { SyncRoom } from "../../src/worker.js";
+
+// Test only. A real host reads a session or an API key instead.
+const TOKENS: Record<string, Grant> = {
+  editor: { principal: { id: "person-1", kind: "human" }, role: "editor" },
+  editor2: { principal: { id: "person-2", kind: "human" }, role: "owner" },
+  agent: { principal: { id: "agent-7", kind: "agent_of_human" }, role: "editor" },
+  named: { principal: { id: "person-9", kind: "human" }, role: "editor", name: "Ana" },
+  viewer: { principal: { id: "person-3", kind: "human" }, role: "viewer" },
+};
+
+// Test only. "user-N" is a distinct editor, for tests that need many principals.
+function grantFor(token: string): Grant | null {
+  if (/^user-\d+$/.test(token)) return { principal: { id: token, kind: "human" }, role: "editor" };
+  return TOKENS[token] ?? null;
+}
+
+export default createSyncWorker({
+  authorize: (request) => grantFor(new URL(request.url).searchParams.get("token") ?? ""),
+});

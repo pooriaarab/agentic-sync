@@ -1,47 +1,37 @@
 export { VERSION } from "./version.js";
 export {
-  defineBrand,
-  createLogger,
-  GuardError,
-  VendorError,
-  createGuards,
-  LocalRouterAdapter,
-  HttpRouterAdapter,
-  recordCost,
-  getCostReport,
-  resetCosts,
-  createDryRunResult,
-  dispatchText,
-  summarizeText,
-} from "./core.js";
+  PRINCIPAL_KINDS,
+  ROLES,
+  DOC_ID_PATTERN,
+  canWrite,
+  isMachineKind,
+  assertGrant,
+} from "./core/types.js";
 export type {
-  BrandConfig,
-  LogLevel,
-  Logger,
-  LoggerOptions,
-  CapsConfig,
-  QuietHoursConfig,
-  GuardsConfig,
-  Guards,
-  DispatchReceipt,
-  RouterAdapter,
-  HttpRouterOptions,
-  CostEntry,
-  CostReport,
-  DispatchOptions,
-  DispatchResult,
-  TopWord,
-  TextSummary,
-  SummarizeOptions,
-} from "./core.js";
-
-import { defineBrand, type BrandConfig } from "./core.js";
-import { VERSION } from "./version.js";
-
-export const DEFAULT_BRAND: BrandConfig = defineBrand({
-  name: "Agentic pack",
-  command: "agentic-sync",
-  description: "Live edits for people and agents on one document, with offline support.",
-  keywords: ["yjs","crdt","realtime","collaboration","presence","offline","agents","durable-objects","cloudflare","mcp"],
-  version: VERSION,
-});
+  PrincipalKind,
+  Role,
+  Principal,
+  Grant,
+  Authorize,
+  Contributor,
+  DocMeta,
+  Realtime,
+} from "./core/types.js";
+export {
+  MESSAGE_SYNC,
+  MESSAGE_AWARENESS,
+  MESSAGE_AUTH,
+  MESSAGE_QUERY_AWARENESS,
+  syncStep1Message,
+  updateMessage,
+  awarenessMessage,
+  permissionDeniedMessage,
+  readMessage,
+} from "./core/protocol.js";
+export type { Incoming } from "./core/protocol.js";
+export {
+  AwarenessRelay,
+  decodeAwarenessUpdate,
+  encodeAwarenessUpdate,
+} from "./core/awareness.js";
+export type { AwarenessEntry } from "./core/awareness.js";
