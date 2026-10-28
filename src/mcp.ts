@@ -1,0 +1,80 @@
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
+import { PRINCIPAL_KINDS, type PrincipalKind } from "./core/types.js";
+import * as sdk from "./sdk.js";
+import { VERSION } from "./version.js";
+
+const doc = z.string().describe("The document id.");
+const name = z.string().describe("The snapshot name.");
+
+const result = (value: unknown, isError = false) => ({
+  content: [{ type: "text" as const, text: JSON.stringify(value) }],
+  ...(isError ? { isError: true as const } : {}),
+});
+
+// Reads AGENTIC_SYNC_URL, AGENTIC_SYNC_TOKEN, AGENTIC_SYNC_NAME and
+// AGENTIC_SYNC_KIND. A tool call never carries a credential.
+export function createMcpServer(env: Record<string, string | undefined> = process.env): McpServer {
+  const server = new McpServer({ name: "agentic-sync", version: VERSION });
+  const target = (): sdk.Target => {
+    if (!env.AGENTIC_SYNC_URL) throw new Error("set AGENTIC_SYNC_URL");
+    const kind = (env.AGENTIC_SYNC_KIND ?? "agent") as PrincipalKind;
+    if (!PRINCIPAL_KINDS.includes(kind)) throw new Error(`AGENTIC_SYNC_KIND is one of ${PRINCIPAL_KINDS.join(", ")}`);
+    return { server: env.AGENTIC_SYNC_URL, token: env.AGENTIC_SYNC_TOKEN, name: env.AGENTIC_SYNC_NAME ?? "agentic-sync mcp", kind };
+  };
+  // Every tool joins the document, does its job, and leaves.
+  const guard = async (job: (t: sdk.Target) => Promise<unknown>) => {
+    try {
+      return result(await job(target()));
+    } catch (error) {
+      return result({ error: error instanceof Error ? error.message : String(error) }, true);
+    }
+  };
+  const read = { readOnlyHint: true };
+
+  server.registerTool(
+    "doc_get",
+    { description: "Read every root of a document as JSON.", inputSchema: { doc }, annotations: read },
+    (a) => guard((t) => sdk.getDoc(t, a.doc)),
+  );
+  server.registerTool(
+    "doc_apply",
+    {
+      description: "Edit a text root. Mode append (default), replace, or insert at a position.",
+      inputSchema: {
+        doc,
+        root: z.string().describe("The name of the text root."),
+        text: z.string(),
+        mode: z.enum(["append", "replace", "insert"]).optional(),
+        at: z.number().int().optional().describe("The position, for insert."),
+      },
+    },
+    (a) => guard((t) => sdk.applyText(t, a.doc, a)),
+  );
+  server.registerTool(
+    "doc_snapshot",
+    { description: "Save a named snapshot of the document.", inputSchema: { doc, name } },
+    (a) => guard((t) => sdk.createSnapshot(t, a.doc, a.name)),
+  );
+  server.registerTool(
+    "doc_snapshots",
+    { description: "List the named snapshots.", inputSchema: { doc }, annotations: read },
+    (a) => guard((t) => sdk.listSnapshots(t, a.doc)),
+  );
+  server.registerTool(
+    "doc_restore",
+    { description: "Restore a snapshot as a new edit. History stays.", inputSchema: { doc, name } },
+    (a) => guard((t) => sdk.restoreSnapshot(t, a.doc, a.name)),
+  );
+  server.registerTool(
+    "doc_presence",
+    { description: "List the other people and agents on the document.", inputSchema: { doc }, annotations: read },
+    (a) => guard((t) => sdk.listPeers(t, a.doc)),
+  );
+  return server;
+}
+
+export async function startMcp(env: Record<string, string | undefined> = process.env): Promise<void> {
+  await createMcpServer(env).connect(new StdioServerTransport());
+}

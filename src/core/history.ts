@@ -52,3 +52,15 @@ export function restoreState(live: Y.Doc, state: Uint8Array, origin?: unknown): 
     }
   }, origin);
 }
+
+// Reads every root type of a document as plain JSON.
+export function readRoots(doc: Y.Doc): Record<string, unknown> {
+  return Object.fromEntries(
+    [...doc.share].map(([key, type]) => {
+      const kind = kindOf(type);
+      if (kind === "text") return [key, doc.getText(key).toString()];
+      if (kind === "xml") return [key, doc.getXmlFragment(key).toString()];
+      return [key, kind === "map" ? doc.getMap(key).toJSON() : doc.getArray(key).toJSON()];
+    }),
+  );
+}
