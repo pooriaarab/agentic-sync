@@ -3,7 +3,13 @@ import {
   createDurableObjectRealtime,
   parseJurisdiction,
 } from "./cloudflare/realtime.js";
-import { assertGrant, DOC_ID_PATTERN, type Authorize } from "./core/types.js";
+import {
+  assertGrant,
+  canWrite,
+  DOC_ID_PATTERN,
+  SNAPSHOT_NAME_PATTERN,
+  type Authorize,
+} from "./core/types.js";
 
 export { SyncRoom } from "./cloudflare/room.js";
 export { createDurableObjectRealtime } from "./cloudflare/realtime.js";
@@ -45,6 +51,36 @@ export function createSyncWorker(options: SyncWorkerOptions): ExportedHandler<Sy
     if (opened instanceof Response) return opened;
     const meta = await opened.realtime.meta(id);
     return c.json({ id, jurisdiction: opened.jurisdiction ?? null, role: opened.grant.role, ...meta });
+  });
+
+  app.get("/api/v1/docs/:id/snapshots", async (c) => {
+    const opened = await open(c.req.raw, c.env, c.req.param("id"));
+    if (opened instanceof Response) return opened;
+    return c.json(await opened.realtime.listSnapshots(c.req.param("id")));
+  });
+
+  app.post("/api/v1/docs/:id/snapshots", async (c) => {
+    const id = c.req.param("id");
+    const opened = await open(c.req.raw, c.env, id);
+    if (opened instanceof Response) return opened;
+    if (!canWrite(opened.grant.role)) return refused(403, "READ_ONLY_ROLE");
+    const body = (await c.req.json().catch(() => null)) as { name?: unknown } | null;
+    if (typeof body?.name !== "string" || !SNAPSHOT_NAME_PATTERN.test(body.name)) {
+      return refused(400, "INVALID_SNAPSHOT_NAME");
+    }
+    const made = await opened.realtime.createSnapshot(id, body.name, opened.grant.principal);
+    return made ? c.json(made, 201) : refused(409, "SNAPSHOT_EXISTS_OR_LIMIT");
+  });
+
+  app.get("/api/v1/docs/:id/snapshots/:name", async (c) => {
+    const opened = await open(c.req.raw, c.env, c.req.param("id"));
+    if (opened instanceof Response) return opened;
+    const name = c.req.param("name");
+    const state = SNAPSHOT_NAME_PATTERN.test(name)
+      ? await opened.realtime.getSnapshot(c.req.param("id"), name)
+      : null;
+    if (state === null) return refused(404, "NOT_FOUND");
+    return new Response(new Uint8Array(state), { headers: { "content-type": "application/octet-stream" } });
   });
 
   app.get("/api/v1/docs/:id/ws", async (c) => {

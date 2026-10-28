@@ -3,6 +3,8 @@ export {
   PRINCIPAL_KINDS,
   ROLES,
   DOC_ID_PATTERN,
+  SNAPSHOT_NAME_PATTERN,
+  MAX_SNAPSHOTS,
   canWrite,
   isMachineKind,
   assertGrant,
@@ -15,6 +17,7 @@ export type {
   Authorize,
   Contributor,
   DocMeta,
+  SnapshotInfo,
   Realtime,
 } from "./core/types.js";
 export {
@@ -35,3 +38,4 @@ export {
   encodeAwarenessUpdate,
 } from "./core/awareness.js";
 export type { AwarenessEntry } from "./core/awareness.js";
+export { restoreState } from "./core/history.js";

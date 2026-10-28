@@ -1,4 +1,4 @@
-import type { DocMeta, Grant, Realtime } from "../core/types.js";
+import type { DocMeta, Grant, Principal, Realtime, SnapshotInfo } from "../core/types.js";
 import { GRANT_HEADER } from "./room.js";
 
 export const JURISDICTIONS = ["eu", "fedramp"] as const;
@@ -30,6 +30,21 @@ export function createDurableObjectRealtime(
     async meta(docId: string): Promise<DocMeta> {
       const response = await room(docId).fetch("https://room.internal/meta");
       return (await response.json()) as DocMeta;
+    },
+    async createSnapshot(docId: string, name: string, author: Principal) {
+      const response = await room(docId).fetch("https://room.internal/snapshots", {
+        method: "POST",
+        body: JSON.stringify({ name, author }),
+      });
+      return response.status === 201 ? ((await response.json()) as SnapshotInfo) : null;
+    },
+    async listSnapshots(docId: string) {
+      const response = await room(docId).fetch("https://room.internal/snapshots");
+      return (await response.json()) as SnapshotInfo[];
+    },
+    async getSnapshot(docId: string, name: string) {
+      const response = await room(docId).fetch(`https://room.internal/snapshots/${name}`);
+      return response.status === 200 ? new Uint8Array(await response.arrayBuffer()) : null;
     },
   };
 }

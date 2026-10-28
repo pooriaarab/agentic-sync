@@ -1,8 +1,10 @@
+import "fake-indexeddb/auto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import * as Y from "yjs";
 import { SyncClient, type ConnectOptions } from "../src/client/index.js";
-import { startWorker, until, type Server } from "./server.js";
+import { openDocument, peerLabel } from "../src/browser/index.js";
+import { freePort, Proxy, startWorker, until, type Server } from "./server.js";
 
 let server: Server;
 
@@ -68,14 +70,24 @@ describe("sync worker under wrangler dev", () => {
   });
 
   test("presence shows an agent as a peer and clears on disconnect", async () => {
-    const bot = await join("presence", "agent", { presence: { name: "Bot" } });
     const person = await join("presence", "editor");
+    const counts: number[] = [];
+    person.onPeers((peers) => counts.push(peers.length));
+    const bot = await join("presence", "agent", { presence: { name: "Bot" } });
     await until(() => person.peers.length === 1, "presence to arrive");
-    expect(person.peers[0]).toMatchObject({ name: "Bot", kind: "agent_of_human", cursor: null });
+    expect(person.peers[0]).toMatchObject({
+      name: "Bot",
+      kind: "agent_of_human",
+      machine: true,
+      cursor: null,
+    });
+    expect(peerLabel(person.peers[0])).toBe("Bot (agent_of_human, machine-made)");
     const late = await join("presence", "editor2");
     await until(() => late.peers.length === 1, "presence for a late joiner");
     await bot.disconnect();
     await until(() => person.peers.length === 0, "presence removal");
+    expect(counts).toContain(1);
+    expect(counts.at(-1)).toBe(0);
   });
 
   test("an agent that claims to be a human still shows as an agent to every peer", async () => {
@@ -91,9 +103,79 @@ describe("sync worker under wrangler dev", () => {
       await until(() => peer.peers.some((p) => p.name === "Ana"), "presence for every peer");
       const seen = peer.peers.find((p) => p.name === "Ana");
       expect(seen?.kind).toBe("agent_of_human");
+      expect(seen?.machine).toBe(true);
+      expect(peerLabel(seen!)).toBe("Ana (agent_of_human, machine-made)");
     }
     expect(agent.awareness.getLocalState()?.kind).toBe("human");
   });
+
+
+  test("snapshots keep their author kind, and restore is a new update", async () => {
+    const person = await join("hist", "editor");
+    await person.edit((doc) => {
+      doc.getText("body").insert(0, "v1");
+      doc.getMap("meta").set("title", "first");
+      doc.getArray("items").push(["a"]);
+    });
+    await person.snapshot("v1");
+    await person.edit((doc) => {
+      doc.getText("body").insert(2, " v2");
+      doc.getMap("meta").set("title", "second");
+      doc.getArray("items").push(["b"]);
+    });
+    await (await join("hist", "agent")).snapshot("agent-mark");
+    await expect((await join("hist", "viewer")).snapshot("nope")).rejects.toThrow("403");
+    const marks = (await person.snapshots()).map((s) => [s.name, s.author.kind, s.author.machine]);
+    expect(marks).toEqual([["agent-mark", "agent_of_human", true], ["v1", "human", false]]);
+
+    // This client has never named a root type, so restore must infer them.
+    const fresh = await join("hist", "editor2");
+    const state = (doc: Y.Doc) =>
+      [doc.getText("body").toString(), doc.getMap("meta").get("title"), doc.getArray("items").toJSON()];
+    await fresh.restore("v1");
+    expect(state(fresh.doc)).toEqual(["v1", "first", ["a"]]);
+    await until(() => text(person) === "v1", "the restore to reach a connected client");
+    expect(await person.snapshots()).toHaveLength(2);
+    await fresh.restore("agent-mark");
+    expect(state(fresh.doc)).toEqual(["v1 v2", "second", ["a", "b"]]);
+    expect((await metaOf("hist")).contributors.map((c) => c.id).sort()).toEqual(["person-1", "person-2"]);
+  });
+
+  test("offline edits persist, reconnect backs off, and edits merge", async () => {
+    const port = await freePort();
+    const proxy = new Proxy(port, Number(new URL(server.http).port));
+    await proxy.listen();
+    const url = `ws://127.0.0.1:${port}/api/v1/docs/offline/ws?token=editor`;
+    const attempts: number[] = [];
+    const open = (onStatus?: (status: string) => void) =>
+      openDocument({ url, storageName: "e2e-offline", reconnect: { initialMs: 100, maxMs: 800 }, onStatus });
+    const { client } = await open((status) => status === "connecting" && attempts.push(Date.now()));
+    await client.whenSynced();
+    await client.edit((doc) => doc.getText("body").insert(0, "online;"));
+    const other = await join("offline", "editor2");
+
+    await proxy.cut();
+    attempts.length = 0;
+    client.doc.getText("body").insert(7, "offline;");
+    await new Promise((resolve) => setTimeout(resolve, 1800));
+    const gaps = attempts.slice(1).map((at, i) => at - attempts[i]);
+    expect(gaps.length).toBeGreaterThanOrEqual(3);
+    expect(gaps.at(-1)!).toBeGreaterThanOrEqual(gaps[0] * 1.5);
+
+    // A reload while offline reads the edit from IndexedDB.
+    const reloaded = await open();
+    expect(text(reloaded.client)).toBe("online;offline;");
+    await reloaded.client.disconnect();
+    await reloaded.persistence.destroy();
+
+    await other.edit((doc) => doc.getText("body").insert(0, "other;"));
+    await proxy.listen();
+    await until(() => text(client).includes("other;") && text(other).includes("offline;"), "the merge");
+    expect(text(client)).toBe(text(other));
+    expect(text(client).length).toBe("other;online;offline;".length);
+    await client.disconnect();
+    await proxy.cut();
+  }, 60_000);
 
   test("the jurisdiction setting reaches the Durable Object namespace", async () => {
     expect((await metaOf("persist")).jurisdiction).toBeNull();

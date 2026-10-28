@@ -17,9 +17,11 @@ import {
   assertGrant,
   canWrite,
   isMachineKind,
+  MAX_SNAPSHOTS,
   type DocMeta,
   type Grant,
   type Principal,
+  type SnapshotInfo,
 } from "../core/types.js";
 
 export const GRANT_HEADER = "x-agentic-sync-grant";
@@ -59,6 +61,13 @@ interface BaseRecord {
   authors: Principal[];
   compactions: number;
   at: number;
+}
+
+interface SnapshotRecord {
+  name: string;
+  at: number;
+  bytes: number;
+  author: Principal;
 }
 
 export interface RoomEnv {
@@ -164,8 +173,35 @@ export class SyncRoom extends DurableObject<RoomEnv> {
     };
   }
 
+  private withLabel(record: SnapshotRecord): SnapshotInfo {
+    return { ...record, author: { ...record.author, machine: isMachineKind(record.author.kind) } };
+  }
+
+  private async snapshots(request: Request, name: string | undefined): Promise<Response> {
+    const storage = this.ctx.storage;
+    if (name !== undefined) {
+      const state = await storage.get<Uint8Array>(`d:${name}`);
+      return state ? new Response(new Uint8Array(state)) : new Response(null, { status: 404 });
+    }
+    if (request.method === "GET") {
+      const all = await storage.list<SnapshotRecord>({ prefix: "s:" });
+      return Response.json([...all.values()].map((record) => this.withLabel(record)));
+    }
+    const { name: wanted, author } = (await request.json()) as { name: string; author: Principal };
+    const taken = await storage.list({ prefix: "s:" });
+    if (taken.has(`s:${wanted}`) || taken.size >= MAX_SNAPSHOTS) return new Response(null, { status: 409 });
+    const state = Y.encodeStateAsUpdate(this.doc);
+    const record: SnapshotRecord = { name: wanted, at: Date.now(), bytes: state.byteLength, author };
+    await storage.put({ [`s:${wanted}`]: record, [`d:${wanted}`]: state });
+    return Response.json(this.withLabel(record), { status: 201 });
+  }
+
   async fetch(request: Request): Promise<Response> {
-    if (new URL(request.url).pathname === "/meta") return Response.json(this.meta());
+    const { pathname } = new URL(request.url);
+    if (pathname === "/meta") return Response.json(this.meta());
+    if (pathname.startsWith("/snapshots")) {
+      return this.snapshots(request, pathname.split("/")[2]);
+    }
     if (request.headers.get("upgrade") !== "websocket") {
       return new Response("expected a websocket", { status: 426 });
     }

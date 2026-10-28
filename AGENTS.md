@@ -11,10 +11,11 @@ connect and with what role.
 ## What exists now
 
 - `agentic-sync/worker`: `createSyncWorker({ authorize })` and `SyncRoom`.
-- `agentic-sync/client`: `SyncClient.connect`, `edit`, `flush`, `peers`, `disconnect`.
+- `agentic-sync/client`: `SyncClient` (`connect`, `edit`, `peers`, `snapshot`, `restore`).
+- `agentic-sync/browser`: `openDocument` (IndexedDB, reconnect) and `peerLabel`.
 - `agentic-sync`: protocol helpers, the `Realtime` interface, and the types.
 
-Offline support, version history, CLI, and MCP server come later.
+The CLI and MCP server come later.
 
 ## Rules
 
@@ -23,6 +24,6 @@ Offline support, version history, CLI, and MCP server come later.
   free of it, so a Node server can reuse it.
 - Keep the author kind on every stored update and snapshot.
 - Make no outbound calls. No CDN, no analytics, no telemetry.
-- Never lowercase a document id. Ids are case sensitive.
+- Never lowercase a document id or snapshot name. Restore is a new update: never rewrite history.
 - Never log document content or personal data.
 - Test with the end-to-end suite in `e2e/`. It runs the real Worker.
