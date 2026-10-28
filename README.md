@@ -14,7 +14,10 @@ Live edits for people and agents on one document, with offline support.
 
 - A sync server on Cloudflare Durable Objects. One object holds one document.
 - The standard Yjs protocol (`y-websocket`), so a stock Yjs client can connect.
-- Presence relay: peers see each other's awareness state.
+- Presence relay: peers see each other's awareness state. The server sets the
+  `kind` of each state from the grant, and the `name` when the grant has one.
+  A client cannot change either. The first socket that announces a client id
+  owns it, and only that socket can update or remove it.
 - Storage in the object. Updates append to a log. Every 50 updates (set
   `SYNC_COMPACT_EVERY`) the log folds into one snapshot.
 - WebSocket hibernation. An idle document costs nothing.
@@ -41,6 +44,7 @@ export default createSyncWorker({
     return {
       principal: { id: user.id, kind: "human" },
       role: await myRoleFor(user, docId), // owner, editor, commenter, viewer
+      name: user.displayName, // optional. Shown in presence in place of the client's name.
     };
   },
 });
@@ -70,15 +74,21 @@ TypeScript with no Cloudflare code.
 ## Limits
 
 - One snapshot or update must stay under 2 MB (Durable Object storage limit).
-  The server closes a connection that sends a message over 1 MiB.
+  The server closes a connection that sends a message over 1 MiB. It refuses
+  an update that would take the document past 1.5 MiB, and answers with a
+  permission-denied message.
+- Presence limits: one socket owns up to 32 client ids, one document holds up to
+  256 presence entries, and one state is up to 8192 characters. A socket that
+  breaks a limit, sends a state that is not a JSON object, or uses an id that
+  belongs to another socket gets closed with code 1008.
 - A jurisdiction is part of the object id. Set it before the first write.
   Changing it later points at an empty document.
 - Presence lives in memory. After a hibernation the server forgets it until the
   clients send their next heartbeat, within about 15 seconds.
 - The server stores the author of each update. After compaction it keeps the
   set of all authors, not the author of each single update.
-- Presence states are not checked against the principal. A client can claim any
-  `kind` in its presence. Trust the contributor list, not presence.
+- The grant is fixed for the life of a socket. A role change or a revocation
+  applies when the client reconnects.
 - The local `wrangler dev` cannot place objects in a jurisdiction. Test
   placement on a deployed Worker.
 - If you sign in with cookies, check the `Origin` header in `authorize`.

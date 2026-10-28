@@ -1,6 +1,10 @@
 import { DurableObject } from "cloudflare:workers";
 import * as Y from "yjs";
-import { AwarenessRelay } from "../core/awareness.js";
+import {
+  AwarenessRelay,
+  AwarenessViolation,
+  encodeAwarenessUpdate,
+} from "../core/awareness.js";
 import {
   awarenessMessage,
   readMessage,
@@ -19,7 +23,8 @@ import {
 export const GRANT_HEADER = "x-agentic-sync-grant";
 
 const MAX_MESSAGE_BYTES = 1024 * 1024;
-const MAX_AWARENESS_IDS = 32;
+// Storage values cap at 2 MiB. Staying under it keeps compaction possible.
+const MAX_DOC_BYTES = 1536 * 1024;
 const DEFAULT_COMPACT_EVERY = 50;
 // Storage deletes up to 128 keys per call, so a batch never exceeds that.
 const MAX_COMPACT_EVERY = 128;
@@ -27,6 +32,8 @@ const FROM_STORAGE = "storage";
 
 interface Attachment {
   grant: Grant;
+  // Names this socket in the presence relay.
+  socketId: string;
   awarenessIds: number[];
 }
 
@@ -61,6 +68,8 @@ export class SyncRoom extends DurableObject<RoomEnv> {
   private pending: string[] = [];
   private seq = 0;
   private compactions = 0;
+  // Upper bound on the stored size of the document.
+  private bytes = 0;
 
   constructor(ctx: DurableObjectState, env: RoomEnv) {
     super(ctx, env);
@@ -71,6 +80,10 @@ export class SyncRoom extends DurableObject<RoomEnv> {
     this.doc.on("update", (update: Uint8Array, origin: unknown) =>
       this.onUpdate(update, origin),
     );
+    for (const ws of ctx.getWebSockets()) {
+      const { socketId, awarenessIds } = ws.deserializeAttachment() as Attachment;
+      this.relay.claim(socketId, awarenessIds);
+    }
     ctx.blockConcurrencyWhile(() => this.load());
   }
 
@@ -84,11 +97,13 @@ export class SyncRoom extends DurableObject<RoomEnv> {
       Y.applyUpdate(this.doc, base.state, FROM_STORAGE);
       base.authors.forEach((author) => this.remember(author));
       this.compactions = base.compactions;
+      this.bytes = base.state.length;
     }
     const log = await this.ctx.storage.list<UpdateRecord>({ prefix: "u:" });
     for (const [key, record] of log) {
       Y.applyUpdate(this.doc, record.update, FROM_STORAGE);
       this.remember(record.author);
+      this.bytes += record.update.length;
       this.pending.push(key);
       this.seq = Number.parseInt(key.slice(2), 10);
     }
@@ -98,6 +113,7 @@ export class SyncRoom extends DurableObject<RoomEnv> {
     if (origin === FROM_STORAGE) return;
     const { ws, author } = origin as { ws: WebSocket; author: Principal };
     this.remember(author);
+    this.bytes += update.length;
     const key = `u:${String(++this.seq).padStart(10, "0")}`;
     const record: UpdateRecord = { update, author, at: Date.now() };
     void this.ctx.storage.put(key, record);
@@ -109,8 +125,10 @@ export class SyncRoom extends DurableObject<RoomEnv> {
   // Both writes run in one tick, so storage applies them together.
   private compact(): void {
     this.compactions += 1;
+    const state = Y.encodeStateAsUpdate(this.doc);
+    this.bytes = state.length;
     const base: BaseRecord = {
-      state: Y.encodeStateAsUpdate(this.doc),
+      state,
       authors: [...this.authors.values()],
       compactions: this.compactions,
       at: Date.now(),
@@ -147,7 +165,11 @@ export class SyncRoom extends DurableObject<RoomEnv> {
     const grant = assertGrant(JSON.parse(decodeURIComponent(header)));
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({ grant, awarenessIds: [] } satisfies Attachment);
+    server.serializeAttachment({
+      grant,
+      socketId: crypto.randomUUID(),
+      awarenessIds: [],
+    } satisfies Attachment);
     server.send(syncStep1Message(this.doc));
     if (this.relay.size > 0) server.send(awarenessMessage(this.relay.encode()));
     return new Response(null, { status: 101, webSocket: client });
@@ -165,6 +187,8 @@ export class SyncRoom extends DurableObject<RoomEnv> {
       incoming = readMessage(this.doc, new Uint8Array(data), {
         canWrite: canWrite(role),
         origin: { ws, author: principal },
+        refuse: (update) =>
+          this.bytes + update.length > MAX_DOC_BYTES ? "document size limit reached" : null,
       });
     } catch {
       ws.close(1007, "malformed message");
@@ -174,19 +198,35 @@ export class SyncRoom extends DurableObject<RoomEnv> {
     if (incoming.denied) ws.send(incoming.denied);
     if (incoming.queryAwareness) ws.send(awarenessMessage(this.relay.encode()));
     if (incoming.awareness) {
-      const accepted = this.relay.apply(incoming.awareness);
-      const ids = new Set(attachment.awarenessIds);
-      accepted.forEach((entry) => ids.add(entry.id));
-      attachment.awarenessIds = [...ids].slice(0, MAX_AWARENESS_IDS);
-      ws.serializeAttachment(attachment);
-      this.broadcast(awarenessMessage(incoming.awareness), ws);
+      let accepted;
+      try {
+        accepted = this.relay.apply(incoming.awareness, attachment.socketId, {
+          kind: principal.kind,
+          name: attachment.grant.name,
+        });
+      } catch (error) {
+        const violation = error instanceof AwarenessViolation;
+        this.dropPresence(ws);
+        ws.close(violation ? 1008 : 1007, violation ? error.message : "malformed message");
+        return;
+      }
+      if (accepted.length > 0) {
+        attachment.awarenessIds = this.relay.idsOf(attachment.socketId);
+        ws.serializeAttachment(attachment);
+        this.broadcast(awarenessMessage(encodeAwarenessUpdate(accepted)), ws);
+      }
     }
   }
 
-  webSocketClose(ws: WebSocket, code: number): void {
-    const { awarenessIds } = ws.deserializeAttachment() as Attachment;
-    const gone = this.relay.remove(awarenessIds);
+  // Tells peers that this socket's clients are gone. Safe to call twice.
+  private dropPresence(ws: WebSocket): void {
+    const { socketId } = ws.deserializeAttachment() as Attachment;
+    const gone = this.relay.release(socketId);
     if (gone) this.broadcast(awarenessMessage(gone), ws);
+  }
+
+  webSocketClose(ws: WebSocket, code: number): void {
+    this.dropPresence(ws);
     try {
       // 1005 and 1006 are reserved and cannot be sent back.
       ws.close(code === 1005 || code === 1006 ? 1000 : code, "closed");

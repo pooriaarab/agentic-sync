@@ -23,6 +23,8 @@ export class Peer {
   readonly denied: string[] = [];
   readonly awareness: AwarenessEntry[] = [];
   readonly synced: Promise<void>;
+  // The close code, once the server or this peer closes the socket.
+  readonly closed: Promise<number>;
   private readonly socket: WebSocket;
 
   constructor(url: string) {
@@ -48,6 +50,9 @@ export class Peer {
         }
       };
     });
+    this.closed = new Promise((resolve) => {
+      this.socket.addEventListener("close", (event) => resolve(event.code));
+    });
     this.doc.on("update", (update: Uint8Array, origin: unknown) => {
       if (origin !== this) this.socket.send(updateMessage(update));
     });
@@ -57,6 +62,15 @@ export class Peer {
     this.socket.send(
       awarenessMessage(encodeAwarenessUpdate([{ id, clock, state: JSON.stringify(state) }])),
     );
+  }
+
+  // Sends bytes as they are, with no encoding of their own.
+  sendRaw(bytes: Uint8Array): void {
+    this.socket.send(bytes);
+  }
+
+  sendPresence(entries: AwarenessEntry[]): void {
+    this.socket.send(awarenessMessage(encodeAwarenessUpdate(entries)));
   }
 
   close(): void {

@@ -18,6 +18,9 @@ export interface Principal {
 export interface Grant {
   principal: Principal;
   role: Role;
+  // A display name the host vouches for. Presence shows it in place of
+  // whatever name the client sends.
+  name?: string;
 }
 
 // The host owns auth. It returns a grant for this request and document,
@@ -62,9 +65,16 @@ export function assertGrant(value: unknown): Grant {
     typeof principal?.id !== "string" ||
     principal.id.length === 0 ||
     !PRINCIPAL_KINDS.includes(principal.kind as PrincipalKind) ||
-    !ROLES.includes(grant?.role as Role)
+    !ROLES.includes(grant?.role as Role) ||
+    (grant?.name !== undefined &&
+      (typeof grant.name !== "string" || grant.name.length === 0 || grant.name.length > 128))
   ) {
     throw new Error("authorize returned an invalid grant");
   }
-  return { principal: { id: principal.id, kind: principal.kind }, role: grant!.role! };
+  const checked: Grant = {
+    principal: { id: principal.id, kind: principal.kind },
+    role: grant!.role!,
+  };
+  if (grant!.name !== undefined) checked.name = grant!.name;
+  return checked;
 }

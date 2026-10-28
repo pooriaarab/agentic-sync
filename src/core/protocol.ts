@@ -47,7 +47,12 @@ function isEmptyUpdate(update: Uint8Array): boolean {
 export function readMessage(
   doc: Y.Doc,
   data: Uint8Array,
-  options: { canWrite: boolean; origin: unknown },
+  options: {
+    canWrite: boolean;
+    origin: unknown;
+    // Returns a reason to refuse an update that would write, or null.
+    refuse?: (update: Uint8Array) => string | null;
+  },
 ): Incoming {
   const decoder = decoding.createDecoder(data);
   switch (decoding.readVarUint(decoder)) {
@@ -62,6 +67,8 @@ export function readMessage(
       if (kind === sync.messageYjsSyncStep2 || kind === sync.messageYjsUpdate) {
         const update = decoding.readVarUint8Array(decoder);
         if (options.canWrite) {
+          const reason = isEmptyUpdate(update) ? null : options.refuse?.(update) ?? null;
+          if (reason !== null) return { denied: permissionDeniedMessage(reason) };
           Y.applyUpdate(doc, update, options.origin);
         } else if (!isEmptyUpdate(update)) {
           return { denied: permissionDeniedMessage("read-only role") };
