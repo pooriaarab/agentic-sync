@@ -14,8 +14,8 @@ connect and with what role.
 - `agentic-sync/client`: `SyncClient` (`connect`, `edit`, `peers`, `snapshot`, `restore`).
 - `agentic-sync/browser`: `openDocument` (IndexedDB, reconnect) and `peerLabel`.
 - `agentic-sync`: protocol helpers, the `Realtime` interface, and the types.
-
-The CLI and MCP server come later.
+- `agentic-sync` CLI and `agentic-sync mcp`: `doc get|apply|snapshot|restore|presence`.
+- `agentic-sync/sdk`: the same operations as functions.
 
 ## Rules
 

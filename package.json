@@ -50,6 +50,10 @@
     "./browser": {
       "types": "./dist/browser/index.d.ts",
       "import": "./dist/browser/index.js"
+    },
+    "./sdk": {
+      "types": "./dist/sdk.d.ts",
+      "import": "./dist/sdk.js"
     }
   },
   "scripts": {
@@ -60,11 +64,13 @@
     "ci:local": "npm run build && npm run typecheck && npm test"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "hono": "^4.13.14",
     "lib0": "^0.2.119",
     "y-indexeddb": "^9.0.12",
     "y-protocols": "^1.0.7",
-    "yjs": "^13.6.33"
+    "yjs": "^13.6.33",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261028.1",
@@ -74,5 +80,9 @@
     "typescript": "^5.9.3",
     "vitest": "^5.0.5",
     "wrangler": "^4.154.0"
+  },
+  "bin": {
+    "agentic-sync": "./dist/cli.js",
+    "agentic-sync-mcp": "./dist/mcp-bin.js"
   }
 }

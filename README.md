@@ -7,9 +7,8 @@
 
 Live edits for people and agents on one document, with offline support.
 
-> Status: early. The sync server, the Node client, offline support, and version
-> history work. The CLI and MCP server are not built yet. The package is not on
-> npm yet.
+> Status: early. Everything below works and has an end-to-end test. The package
+> is not on npm yet, so build it from source.
 
 ## Features
 
@@ -26,6 +25,7 @@ Live edits for people and agents on one document, with offline support.
   and `peerLabel` help any UI show peers, with agents marked as machine-made.
 - Version history: `client.snapshot(name)`, `snapshots()`, and `restore(name)`.
   A restore is a new edit by you. No stored update or snapshot changes.
+- A CLI and an MCP server, so an agent can join and edit with no code.
 - Storage in the object. Updates append to a log. Every 50 updates (set
   `SYNC_COMPACT_EVERY`) the log folds into one snapshot.
 - WebSocket hibernation. An idle document costs nothing.
@@ -98,11 +98,63 @@ as an agent. Each peer in `client.peers` carries that `kind`, and `machine` is
 true for every kind except a person. Use any Yjs document type on `client.doc`.
 The client needs Node 22 or later. It reconnects only if you pass `reconnect: {}`.
 
+## Use the CLI
+
+```sh
+export AGENTIC_SYNC_URL=https://sync.example.com
+export AGENTIC_SYNC_TOKEN=...   # sent as a bearer token
+agentic-sync doc apply --doc notes --root body --text "Hello"
+agentic-sync doc get --doc notes
+agentic-sync doc snapshot --doc notes --name before-review
+agentic-sync doc restore --doc notes --name before-review
+agentic-sync doc presence --doc notes
+```
+
+Each command joins the document, does one job, prints JSON, and leaves. `doc
+snapshot` without `--name` lists the snapshots. A refused edit exits with 1 and
+prints the reason. `--name` sets the name you show in presence. The server takes
+your role, your kind, and your author label from the token. The CLI has no
+`--kind` flag. `doc apply` edits text roots and empty roots only. It refuses a
+rich-text, map, or array root and exits with 1, so it never deletes a document.
+
+## Use the MCP server
+
+`agentic-sync mcp` serves these tools over stdio: `doc_get`, `doc_apply`,
+`doc_snapshot`, `doc_snapshots`, `doc_restore`, and `doc_presence`. Set
+`AGENTIC_SYNC_URL`, `AGENTIC_SYNC_TOKEN`, and optionally `AGENTIC_SYNC_NAME` in
+the server environment. A tool call never carries a credential. `doc_apply`
+returns an error for a root that is not text. The same operations are in `agentic-sync/sdk`.
+
+## Work offline in the browser
+
+```ts
+import { openDocument, peerLabel } from "agentic-sync/browser";
+
+const { client } = await openDocument({
+  url: "wss://sync.example.com/api/v1/docs/notes/ws?ticket=...",
+  storageName: "notes",
+  presence: { name: "Ana" },
+});
+client.onPeers((peers) => render(peers.map(peerLabel)));
+```
+
+`openDocument` loads the IndexedDB copy first. It then connects and reconnects
+after a drop, with delays that double from 500 ms up to 30 s. `onPeers` works in
+any UI framework. `peerLabel` names an agent as machine-made.
+
+## Protocol
+
+The WebSocket carries the `y-websocket` messages: sync (type 0), awareness (1),
+auth (2), and query awareness (3). A read-only role gets an auth
+permission-denied reply, and the server drops its update. The server answers in
+order, so its reply to a new sync request proves it has all earlier updates.
+`flush` relies on that. A restore is a normal update.
+
 ## Swap the server
 
-The Worker talks to the server through the `Realtime` interface. It has two
-methods: `connect` and `meta`. The Cloudflare adapter implements it with Durable
-Objects. A Node Yjs server on an EU host can implement it too. The wire
+The Worker talks to the server through the `Realtime` interface. It has five
+methods: `connect`, `meta`, `createSnapshot`, `listSnapshots`, and
+`getSnapshot`. The Cloudflare adapter implements it with Durable Objects. A Node Yjs server on an EU host can implement it too. The wire
 protocol helpers in `agentic-sync` (`readMessage`, `AwarenessRelay`) are plain
 TypeScript with no Cloudflare code.
 
@@ -126,6 +178,8 @@ TypeScript with no Cloudflare code.
 - A jurisdiction is part of the object id. Set it before the first write.
   Changing it later points at an empty document.
 - A snapshot is a full copy of the state. A document keeps at most 50.
+- Restore replaces each root type (text, map, array, XML) and keeps text
+  formatting. The CLI and MCP tools edit text roots. Use the client for others.
 - The IndexedDB tests run on `fake-indexeddb` in Node, not in a real browser.
 - Presence lives in memory. After a hibernation the server forgets it until the
   clients send their next heartbeat, within about 15 seconds.
