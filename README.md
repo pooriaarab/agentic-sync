@@ -7,9 +7,9 @@
 
 Live edits for people and agents on one document, with offline support.
 
-> Status: early. The sync server and the headless Node client work. Offline
-> support, version history, CLI, and MCP server are not built yet. The package
-> is not on npm yet.
+> Status: early. The sync server, the Node client, offline support, and version
+> history work. The CLI and MCP server are not built yet. The package is not on
+> npm yet.
 
 ## Features
 
@@ -21,6 +21,11 @@ Live edits for people and agents on one document, with offline support.
   owns it. Only that socket, or a new socket of the same principal, can
   update or remove it.
 - A headless Node client (`agentic-sync/client`) so an agent can join a document.
+- Browser offline support (`agentic-sync/browser`): `openDocument` keeps an
+  IndexedDB copy, reconnects with backoff, and merges offline edits. `onPeers`
+  and `peerLabel` help any UI show peers, with agents marked as machine-made.
+- Version history: `client.snapshot(name)`, `snapshots()`, and `restore(name)`.
+  A restore is a new edit by you. No stored update or snapshot changes.
 - Storage in the object. Updates append to a log. Every 50 updates (set
   `SYNC_COMPACT_EVERY`) the log folds into one snapshot.
 - WebSocket hibernation. An idle document costs nothing.
@@ -59,6 +64,8 @@ Copy `wrangler.jsonc` for the Durable Object binding and the migration.
 | --- | --- |
 | `GET /api/v1/docs/:id/ws` | Upgrade to a WebSocket. Speaks the Yjs protocol. |
 | `GET /api/v1/docs/:id` | Read the role, jurisdiction, update count, compaction count, and contributors. |
+| `GET/POST /api/v1/docs/:id/snapshots` | List snapshots, or save one (editors only). |
+| `GET /api/v1/docs/:id/snapshots/:name` | Read a snapshot as a Yjs update. |
 | `GET /health` | Check that the Worker runs. |
 
 A document id matches `[A-Za-z0-9_-]{1,128}`. Ids are case sensitive.
@@ -87,9 +94,9 @@ the server drops the edit and `client.denied` holds its reason.
 
 Your presence is `{ name, color, cursor }`. You do not set a `kind`. The server
 adds the `kind` of your grant to your presence, so people always see an agent
-as an agent. Each peer in `client.peers` carries that `kind`. Use any Yjs
-document type on `client.doc`.
-The client needs Node 22 or later and does not reconnect by itself yet.
+as an agent. Each peer in `client.peers` carries that `kind`, and `machine` is
+true for every kind except a person. Use any Yjs document type on `client.doc`.
+The client needs Node 22 or later. It reconnects only if you pass `reconnect: {}`.
 
 ## Swap the server
 
@@ -118,6 +125,8 @@ TypeScript with no Cloudflare code.
   server notices that the old connection is dead.
 - A jurisdiction is part of the object id. Set it before the first write.
   Changing it later points at an empty document.
+- A snapshot is a full copy of the state. A document keeps at most 50.
+- The IndexedDB tests run on `fake-indexeddb` in Node, not in a real browser.
 - Presence lives in memory. After a hibernation the server forgets it until the
   clients send their next heartbeat, within about 15 seconds.
 - The server stores the author of each update. After compaction it keeps the

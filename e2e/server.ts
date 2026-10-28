@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync } from "node:fs";
-import { connect, createServer, type Socket } from "node:net";
+import { connect, createServer, type Server as NetServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,7 +11,7 @@ export interface Server {
   stop(): Promise<void>;
 }
 
-function freePort(): Promise<number> {
+export function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const probe = createServer();
     probe.once("error", reject);
@@ -123,4 +123,29 @@ export async function halfOpenProxy(target: number): Promise<HalfOpenProxy> {
       await new Promise<void>((resolve) => listener.close(() => resolve()));
     },
   };
+}
+
+// A TCP relay we can cut and bring back, to stand in for a lost network.
+export class Proxy {
+  private server?: NetServer;
+  private readonly sockets = new Set<Socket>();
+
+  constructor(readonly port: number, private readonly target: number) {}
+
+  listen(): Promise<void> {
+    this.server = createServer((client) => {
+      const upstream = connect(this.target, "127.0.0.1");
+      for (const socket of [client, upstream]) {
+        this.sockets.add(socket);
+        socket.on("close", () => this.sockets.delete(socket)).on("error", () => socket.destroy());
+      }
+      client.pipe(upstream).pipe(client);
+    });
+    return new Promise((resolve) => this.server!.listen(this.port, "127.0.0.1", resolve));
+  }
+
+  cut(): Promise<void> {
+    this.sockets.forEach((socket) => socket.destroy());
+    return new Promise((resolve) => this.server!.close(() => resolve()));
+  }
 }

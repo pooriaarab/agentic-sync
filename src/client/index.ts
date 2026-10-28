@@ -12,7 +12,8 @@ import {
   syncStep1Message,
   updateMessage,
 } from "../core/protocol.js";
-import type { PrincipalKind } from "../core/types.js";
+import { restoreState } from "../core/history.js";
+import { isMachineKind, type PrincipalKind, type SnapshotInfo } from "../core/types.js";
 
 // What a client shows to the others. Do not put personal data here.
 // The client sets no kind. The server adds it from the grant.
@@ -27,7 +28,11 @@ export interface Presence {
 export interface Peer extends Presence {
   clientId: number;
   kind: PrincipalKind;
+  // True for every kind except a person. Show it in the UI.
+  machine: boolean;
 }
+
+export type Status = "connecting" | "connected" | "disconnected";
 
 type SocketConstructor = new (
   url: string,
@@ -42,6 +47,9 @@ export interface ConnectOptions {
   doc?: Y.Doc;
   presence?: Pick<Presence, "name"> & Partial<Presence>;
   timeoutMs?: number;
+  // Reconnect after a drop, with delays that double up to maxMs.
+  reconnect?: { initialMs?: number; maxMs?: number };
+  onStatus?: (status: Status) => void;
   WebSocket?: SocketConstructor;
 }
 
@@ -63,33 +71,25 @@ export class SyncClient {
   readonly awareness: awarenessProtocol.Awareness;
   // Reasons the server gave when it dropped an update, in order.
   readonly denied: string[] = [];
-  private readonly socket: WebSocket;
+  private socket!: WebSocket;
+  private readonly options: ConnectOptions;
   private readonly barriers: Barrier[] = [];
+  private readonly waiting: Barrier[] = [];
   private readonly timeoutMs: number;
-  private readonly closed: Promise<void>;
-  private readonly opened: Promise<void>;
+  private synced = false;
+  private stopped = false;
+  private delayMs: number;
+  private retry?: ReturnType<typeof setTimeout>;
+  private resolveClosed!: () => void;
+  private readonly closed = new Promise<void>((resolve) => (this.resolveClosed = resolve));
+  private opened!: Promise<void>;
 
   private constructor(options: ConnectOptions) {
+    this.options = options;
     this.doc = options.doc ?? new Y.Doc();
     this.timeoutMs = options.timeoutMs ?? 10_000;
+    this.delayMs = options.reconnect?.initialMs ?? 500;
     this.awareness = new awarenessProtocol.Awareness(this.doc);
-    const Socket = options.WebSocket ?? (WebSocket as unknown as SocketConstructor);
-    this.socket = new Socket(options.url, { headers: options.headers });
-    this.socket.binaryType = "arraybuffer";
-    this.opened = new Promise((resolve, reject) => {
-      this.socket.onopen = () => {
-        if (this.awareness.getLocalState() !== null) this.sendPresence([this.doc.clientID]);
-        resolve();
-      };
-      this.socket.onerror = () => reject(new Error("could not connect"));
-    });
-    this.closed = new Promise((resolve) => {
-      this.socket.onclose = () => {
-        this.barriers.splice(0).forEach((b) => b.reject(new Error("connection closed")));
-        resolve();
-      };
-    });
-    this.socket.onmessage = (event) => this.receive(new Uint8Array(event.data as ArrayBuffer));
     this.doc.on("update", (update: Uint8Array, origin: unknown) => {
       if (origin !== this) this.send(updateMessage(update));
     });
@@ -104,14 +104,84 @@ export class SyncClient {
       const { name, color = colorFor(name), cursor = null } = options.presence;
       this.awareness.setLocalState({ name, color, cursor } satisfies Presence);
     }
+    this.open();
+  }
+
+  private open(): void {
+    const Socket = this.options.WebSocket ?? (WebSocket as unknown as SocketConstructor);
+    // A browser reads the second argument as a protocol list, so pass it
+    // only when there are headers.
+    const socket = this.options.headers
+      ? new Socket(this.options.url, { headers: this.options.headers })
+      : new Socket(this.options.url);
+    this.socket = socket;
+    socket.binaryType = "arraybuffer";
+    this.options.onStatus?.("connecting");
+    this.opened = new Promise((resolve, reject) => {
+      socket.onopen = () => {
+        this.delayMs = this.options.reconnect?.initialMs ?? 500;
+        this.options.onStatus?.("connected");
+        if (this.awareness.getLocalState() !== null) this.sendPresence([this.doc.clientID]);
+        this.flush().then(
+          () => {
+            this.synced = true;
+            this.waiting.splice(0).forEach((w) => w.resolve());
+          },
+          // Only an open socket that stays silent is reported here.
+          (error: Error) => {
+            if (socket.readyState === 1) this.waiting.splice(0).forEach((w) => w.reject(error));
+          },
+        );
+        resolve();
+      };
+      socket.onerror = () => {
+        reject(new Error("could not connect"));
+        drop();
+      };
+    });
+    this.opened.catch(() => undefined);
+    socket.onmessage = (event) => this.receive(new Uint8Array(event.data as ArrayBuffer));
+    // A refused connection may raise an error and no close, so both end it.
+    let ended = false;
+    const drop = () => {
+      if (ended) return;
+      ended = true;
+      socket.close();
+      this.synced = false;
+      this.barriers.splice(0).forEach((b) => b.reject(new Error("connection closed")));
+      this.options.onStatus?.("disconnected");
+      if (this.stopped || !this.options.reconnect) {
+        this.waiting.splice(0).forEach((w) => w.reject(new Error("connection closed")));
+        this.resolveClosed();
+        return;
+      }
+      this.retry = setTimeout(() => this.open(), this.delayMs);
+      this.delayMs = Math.min(this.delayMs * 2, this.options.reconnect.maxMs ?? 30_000);
+    };
+    socket.onclose = drop;
+  }
+
+  // Returns at once and keeps trying while offline. Use whenSynced to wait.
+  static open(options: ConnectOptions): SyncClient {
+    return new SyncClient(options);
   }
 
   // Connects and resolves once the document matches the server.
   static async connect(options: ConnectOptions): Promise<SyncClient> {
     const client = new SyncClient(options);
-    await client.opened;
-    await client.flush();
+    try {
+      await client.opened;
+      await client.whenSynced();
+    } catch (error) {
+      void client.disconnect();
+      throw error;
+    }
     return client;
+  }
+
+  whenSynced(): Promise<void> {
+    if (this.synced) return Promise.resolve();
+    return new Promise((resolve, reject) => this.waiting.push({ resolve, reject }));
   }
 
   private sendPresence(ids: number[]): void {
@@ -119,7 +189,7 @@ export class SyncClient {
   }
 
   private send(data: Uint8Array): void {
-    if (this.socket.readyState === 1) this.socket.send(data);
+    if (this.socket?.readyState === 1) this.socket.send(data);
   }
 
   private receive(data: Uint8Array): void {
@@ -172,17 +242,60 @@ export class SyncClient {
   get peers(): Peer[] {
     return [...this.awareness.getStates()]
       .filter(([clientId]) => clientId !== this.doc.clientID)
-      .map(([clientId, state]) => ({ clientId, ...(state as Omit<Peer, "clientId">) }));
+      .map(([clientId, state]) => {
+        const peer = state as Omit<Peer, "clientId" | "machine">;
+        return { clientId, ...peer, machine: isMachineKind(peer.kind) };
+      });
+  }
+
+  // Calls you when anyone joins, leaves, or changes presence. Returns a
+  // function that stops the calls.
+  onPeers(listener: (peers: Peer[]) => void): () => void {
+    const notify = () => listener(this.peers);
+    this.awareness.on("change", notify);
+    return () => this.awareness.off("change", notify);
   }
 
   setPresence(patch: Partial<Presence>): void {
     this.awareness.setLocalState({ ...this.awareness.getLocalState(), ...patch });
   }
 
+  private async api(path: string, init: RequestInit = {}): Promise<Response> {
+    const url = new URL(this.options.url);
+    url.protocol = url.protocol === "wss:" ? "https:" : "http:";
+    url.pathname = url.pathname.replace(/\/ws$/, "") + path;
+    const headers = { ...this.options.headers, ...(init.body ? { "content-type": "application/json" } : {}) };
+    const response = await fetch(url, { ...init, headers });
+    if (!response.ok) throw new Error(`request failed: ${response.status}`);
+    return response;
+  }
+
+  // Saves the document as it is now, with your local edits, under a name.
+  async snapshot(name: string): Promise<SnapshotInfo> {
+    await this.flush();
+    const body = JSON.stringify({ name });
+    return (await (await this.api("/snapshots", { method: "POST", body })).json()) as SnapshotInfo;
+  }
+
+  async snapshots(): Promise<SnapshotInfo[]> {
+    return (await (await this.api("/snapshots")).json()) as SnapshotInfo[];
+  }
+
+  // Sets the document back to a named snapshot. This is a new edit by you, so
+  // later versions and all snapshots stay. Restore the later one to undo it.
+  async restore(name: string): Promise<void> {
+    const response = await this.api(`/snapshots/${encodeURIComponent(name)}`);
+    restoreState(this.doc, new Uint8Array(await response.arrayBuffer()));
+    await this.flush();
+  }
+
   async disconnect(): Promise<void> {
+    this.stopped = true;
+    clearTimeout(this.retry);
     awarenessProtocol.removeAwarenessStates(this.awareness, [this.doc.clientID], "disconnect");
     this.awareness.destroy();
-    this.socket.close(1000);
+    if (this.socket.readyState === 3) this.resolveClosed();
+    else this.socket.close(1000);
     await this.closed;
   }
 }

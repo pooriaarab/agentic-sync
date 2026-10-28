@@ -40,11 +40,26 @@ export interface DocMeta {
   contributors: Contributor[];
 }
 
+export interface SnapshotInfo {
+  name: string;
+  at: number;
+  bytes: number;
+  author: Contributor;
+}
+
+export const SNAPSHOT_NAME_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+export const MAX_SNAPSHOTS = 50;
+
 // The sync server port. The Cloudflare adapter uses Durable Objects.
 // A Node Yjs server on any host can implement the same two methods.
 export interface Realtime {
   connect(docId: string, request: Request, grant: Grant): Promise<Response>;
   meta(docId: string): Promise<DocMeta>;
+  // Null if the name is taken or the document holds the most snapshots.
+  createSnapshot(docId: string, name: string, author: Principal): Promise<SnapshotInfo | null>;
+  listSnapshots(docId: string): Promise<SnapshotInfo[]>;
+  // The saved state as a Yjs update, or null.
+  getSnapshot(docId: string, name: string): Promise<Uint8Array | null>;
 }
 
 export const DOC_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
