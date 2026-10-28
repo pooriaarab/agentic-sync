@@ -7,8 +7,13 @@
 
 Live edits for people and agents on one document, with offline support.
 
-> Status: early. Everything below works and has an end-to-end test. The package
-> is not on npm yet, so build it from source.
+> Status: 0.1.0 preview. Everything below works and has an end-to-end test.
+
+## Install
+
+```sh
+npm install agentic-sync
+```
 
 ## Features
 

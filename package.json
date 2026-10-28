@@ -1,6 +1,6 @@
 {
   "name": "agentic-sync",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Live edits for people and agents on one document, with offline support.",
   "keywords": [
     "yjs",
