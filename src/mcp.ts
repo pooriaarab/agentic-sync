@@ -1,7 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { PRINCIPAL_KINDS, type PrincipalKind } from "./core/types.js";
 import * as sdk from "./sdk.js";
 import { VERSION } from "./version.js";
 
@@ -13,15 +12,13 @@ const result = (value: unknown, isError = false) => ({
   ...(isError ? { isError: true as const } : {}),
 });
 
-// Reads AGENTIC_SYNC_URL, AGENTIC_SYNC_TOKEN, AGENTIC_SYNC_NAME and
-// AGENTIC_SYNC_KIND. A tool call never carries a credential.
+// Reads AGENTIC_SYNC_URL, AGENTIC_SYNC_TOKEN and AGENTIC_SYNC_NAME. A tool
+// call never carries a credential. The server sets the kind from the token.
 export function createMcpServer(env: Record<string, string | undefined> = process.env): McpServer {
   const server = new McpServer({ name: "agentic-sync", version: VERSION });
   const target = (): sdk.Target => {
     if (!env.AGENTIC_SYNC_URL) throw new Error("set AGENTIC_SYNC_URL");
-    const kind = (env.AGENTIC_SYNC_KIND ?? "agent") as PrincipalKind;
-    if (!PRINCIPAL_KINDS.includes(kind)) throw new Error(`AGENTIC_SYNC_KIND is one of ${PRINCIPAL_KINDS.join(", ")}`);
-    return { server: env.AGENTIC_SYNC_URL, token: env.AGENTIC_SYNC_TOKEN, name: env.AGENTIC_SYNC_NAME ?? "agentic-sync mcp", kind };
+    return { server: env.AGENTIC_SYNC_URL, token: env.AGENTIC_SYNC_TOKEN, name: env.AGENTIC_SYNC_NAME ?? "agentic-sync mcp" };
   };
   // Every tool joins the document, does its job, and leaves.
   const guard = async (job: (t: sdk.Target) => Promise<unknown>) => {
@@ -41,13 +38,14 @@ export function createMcpServer(env: Record<string, string | undefined> = proces
   server.registerTool(
     "doc_apply",
     {
-      description: "Edit a text root. Mode append (default), replace, or insert at a position.",
+      description:
+        "Edit a text root. Mode append (default), replace, or insert at a position. Refuses a root that is not text, such as a rich-text document.",
       inputSchema: {
         doc,
         root: z.string().describe("The name of the text root."),
         text: z.string(),
         mode: z.enum(["append", "replace", "insert"]).optional(),
-        at: z.number().int().optional().describe("The position, for insert."),
+        at: z.number().int().min(0).optional().describe("The position, for insert."),
       },
     },
     (a) => guard((t) => sdk.applyText(t, a.doc, a)),

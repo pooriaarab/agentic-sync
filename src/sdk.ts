@@ -1,18 +1,34 @@
 import { SyncClient, type Peer } from "./client/index.js";
-import { readRoots } from "./core/history.js";
-import type { PrincipalKind, SnapshotInfo } from "./core/types.js";
+import { readRoots, rootKind, type Kind } from "./core/history.js";
+import type { SnapshotInfo } from "./core/types.js";
 
 // Where to connect, and how to show up. The token is sent as a bearer
-// header. The kind is a claim for presence only. The server decides who you
-// are from the token.
+// header. The server decides who you are, and which kind you show as,
+// from the token.
 export interface Target {
   server: string;
   token?: string;
   name?: string;
-  kind?: PrincipalKind;
 }
 
-export type EditMode = "append" | "replace" | "insert";
+export const EDIT_MODES = ["append", "replace", "insert"] as const;
+export type EditMode = (typeof EDIT_MODES)[number];
+
+const ROOT_LABELS: Record<Exclude<Kind, "text">, string> = {
+  xml: "rich-text",
+  map: "map",
+  array: "array",
+};
+
+// Refuses a root that holds something other than text. Writing text into
+// it would delete its content or put a string where an editor expects nodes.
+function assertTextRoot(client: SyncClient, root: string): void {
+  const held = rootKind(client.doc, root);
+  if (held === "text" || held === "empty") return;
+  throw new Error(
+    `root "${root}" is not text. It holds ${ROOT_LABELS[held]} content, so doc_apply does not edit it.`,
+  );
+}
 
 function socketUrl(target: Target, docId: string): string {
   const url = new URL(target.server);
@@ -30,7 +46,7 @@ export async function withDoc<T>(
   const client = await SyncClient.connect({
     url: socketUrl(target, docId),
     headers: target.token ? { authorization: `Bearer ${target.token}` } : undefined,
-    presence: { name: target.name ?? "agent", kind: target.kind ?? "agent" },
+    presence: { name: target.name ?? "agent" },
   });
   try {
     const result = await job(client);
@@ -53,6 +69,7 @@ export const applyText = (
 ) =>
   withDoc(target, docId, async (client) => {
     const { root, text, mode = "append", at = 0 } = edit;
+    assertTextRoot(client, root);
     await client.edit((doc) => {
       const body = doc.getText(root);
       if (mode === "replace") body.delete(0, body.length);

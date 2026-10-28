@@ -1,13 +1,12 @@
 #!/usr/bin/env node
 import { readFileSync, realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { PRINCIPAL_KINDS, type PrincipalKind } from "./core/types.js";
 import * as sdk from "./sdk.js";
 import { VERSION } from "./version.js";
 
 export class UsageError extends Error {}
 
-const FLAGS = ["server", "doc", "root", "text", "file", "mode", "at", "name", "kind", "wait"];
+const FLAGS = ["server", "doc", "root", "text", "file", "mode", "at", "name", "wait"];
 const SUBCOMMANDS = ["get", "apply", "snapshot", "restore", "presence"];
 
 export interface CliRequest {
@@ -30,8 +29,20 @@ export function parseArgs(argv: string[]): CliRequest {
   while (rest.length > 0) {
     const flag = rest.shift()!.replace(/^--/, "");
     const value = rest.shift();
-    if (!FLAGS.includes(flag) || value === undefined) throw new UsageError(`bad flag "--${flag}"`);
+    if (!FLAGS.includes(flag)) throw new UsageError(`bad flag "--${flag}"`);
+    // A value that is the name of another flag means the real value is missing.
+    if (value === undefined || (value.startsWith("--") && FLAGS.includes(value.slice(2)))) {
+      throw new UsageError(`--${flag} needs a value`);
+    }
     flags[flag] = value;
+  }
+  if (flags.mode !== undefined && !sdk.EDIT_MODES.includes(flags.mode as sdk.EditMode)) {
+    throw new UsageError(`--mode is one of ${sdk.EDIT_MODES.join(", ")}`);
+  }
+  for (const flag of ["at", "wait"]) {
+    if (flags[flag] !== undefined && !/^\d+$/.test(flags[flag])) {
+      throw new UsageError(`--${flag} needs a whole number, 0 or more`);
+    }
   }
   if (flags.doc === undefined) throw new UsageError("doc commands need --doc <id>");
   const need = { apply: ["root"], restore: ["name"] }[sub as "apply" | "restore"] ?? [];
@@ -54,7 +65,7 @@ Set AGENTIC_SYNC_URL and AGENTIC_SYNC_TOKEN. The token stays off the command lin
   restore --name <n>           Restore as a new edit.
   presence [--wait <ms>]       List the other peers.
 
-Other flags: --server <url>, --kind <principal kind>, --name <label for peers>.`;
+Other flags: --server <url>, --name <label for peers>. The server sets your kind from the token.`;
 
 export async function runCli(
   argv: string[],
@@ -70,9 +81,7 @@ export async function runCli(
     }
     const server = flags.server ?? env.AGENTIC_SYNC_URL;
     if (!server) throw new UsageError("set AGENTIC_SYNC_URL or pass --server");
-    const kind = (flags.kind ?? "agent") as PrincipalKind;
-    if (!PRINCIPAL_KINDS.includes(kind)) throw new UsageError(`--kind is one of ${PRINCIPAL_KINDS.join(", ")}`);
-    const target: sdk.Target = { server, token: env.AGENTIC_SYNC_TOKEN, name: flags.name ?? "agentic-sync cli", kind };
+    const target: sdk.Target = { server, token: env.AGENTIC_SYNC_TOKEN, name: flags.name ?? "agentic-sync cli" };
     const doc = flags.doc;
     let result: unknown;
     switch (sub) {

@@ -112,16 +112,18 @@ agentic-sync doc presence --doc notes
 
 Each command joins the document, does one job, prints JSON, and leaves. `doc
 snapshot` without `--name` lists the snapshots. A refused edit exits with 1 and
-prints the reason. `--kind` and `--name` set how you show in presence. They do
-not set your role or author label. The server takes those from the token.
+prints the reason. `--name` sets the name you show in presence. The server takes
+your role, your kind, and your author label from the token. The CLI has no
+`--kind` flag. `doc apply` edits text roots and empty roots only. It refuses a
+rich-text, map, or array root and exits with 1, so it never deletes a document.
 
 ## Use the MCP server
 
 `agentic-sync mcp` serves these tools over stdio: `doc_get`, `doc_apply`,
 `doc_snapshot`, `doc_snapshots`, `doc_restore`, and `doc_presence`. Set
-`AGENTIC_SYNC_URL`, `AGENTIC_SYNC_TOKEN`, and optionally `AGENTIC_SYNC_NAME` and
-`AGENTIC_SYNC_KIND` in the server environment. A tool call never carries a
-credential. The same operations are in `agentic-sync/sdk`.
+`AGENTIC_SYNC_URL`, `AGENTIC_SYNC_TOKEN`, and optionally `AGENTIC_SYNC_NAME` in
+the server environment. A tool call never carries a credential. `doc_apply`
+returns an error for a root that is not text. The same operations are in `agentic-sync/sdk`.
 
 ## Work offline in the browser
 
@@ -131,7 +133,7 @@ import { openDocument, peerLabel } from "agentic-sync/browser";
 const { client } = await openDocument({
   url: "wss://sync.example.com/api/v1/docs/notes/ws?ticket=...",
   storageName: "notes",
-  presence: { name: "Ana", kind: "human" },
+  presence: { name: "Ana" },
 });
 client.onPeers((peers) => render(peers.map(peerLabel)));
 ```

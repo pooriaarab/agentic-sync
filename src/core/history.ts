@@ -1,6 +1,6 @@
 import * as Y from "yjs";
 
-type Kind = "text" | "map" | "array" | "xml";
+export type Kind = "text" | "map" | "array" | "xml";
 
 const TEXT_REFS = [4, 5, 6]; // string, embed, format content
 
@@ -17,6 +17,17 @@ function kindOf(type: Y.AbstractType<any>): Kind {
   if (TEXT_REFS.includes(item.content.getRef())) return "text";
   const held = (item.content as { type?: unknown }).type;
   return held instanceof Y.XmlElement || held instanceof Y.XmlText ? "xml" : "array";
+}
+
+// True when a root type holds nothing, so any type can still claim it.
+const isEmpty = (type: Y.AbstractType<any>): boolean =>
+  type._length === 0 && [...type._map.values()].every((item) => item.deleted);
+
+// What a root holds, so an edit can refuse a root of the wrong type.
+// A root that does not exist, or has no content, reads as "empty".
+export function rootKind(doc: Y.Doc, root: string): Kind | "empty" {
+  const type = doc.share.get(root);
+  return type === undefined || isEmpty(type) ? "empty" : kindOf(type);
 }
 
 const copy = (value: unknown): unknown =>
