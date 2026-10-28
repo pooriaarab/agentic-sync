@@ -7,29 +7,20 @@ description: Live edits for people and agents on one document, with offline supp
 
 Live edits for people and agents on one document, with offline support.
 
-## Use the SDK
+## Use the Worker
 
-```js
-import { summarizeText, dispatchText } from "agentic-sync";
+```ts
+import { createSyncWorker } from "agentic-sync/worker";
+export { SyncRoom } from "agentic-sync/worker";
 
-summarizeText("some text");
-await dispatchText("some text", { dryRun: true });
+export default createSyncWorker({ authorize: myAuthorize });
 ```
 
-## Use the CLI
-
-```sh
-agentic-sync summary --text "some text"
-agentic-sync dispatch --text "some text" --dry-run
-```
-
-## Use the MCP server
-
-Start the server with `agentic-sync mcp`. Call `summarize_text`
-for stats, `dispatch_text` for routes, `get_cost_report` for costs.
+Connect a Yjs client to `/api/v1/docs/:id/ws`. Read `/api/v1/docs/:id` for
+the contributors and their kinds.
 
 ## Rules
 
-- Preview each route with dry run first.
-- Report guard denials and adapter errors as failures.
-- Read the cost report at the end.
+- The host owns auth. Pass an `authorize` hook.
+- Read-only roles cannot write. The server drops their updates.
+- Label agent edits by principal kind. Never hide that an agent wrote them.

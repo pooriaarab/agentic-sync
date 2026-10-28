@@ -1,0 +1,10 @@
+{
+  "name": "agentic-sync-e2e",
+  "main": "worker.ts",
+  "compatibility_date": "2026-01-01",
+  "durable_objects": {
+    "bindings": [{ "name": "SYNC_ROOM", "class_name": "SyncRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SyncRoom"] }],
+  "vars": { "SYNC_COMPACT_EVERY": "5" }
+}
