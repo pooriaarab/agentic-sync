@@ -18,6 +18,10 @@ function grantFor(token: string): Grant | null {
   return TOKENS[token] ?? null;
 }
 
+// A token comes from a bearer header, or from the query for browsers.
 export default createSyncWorker({
-  authorize: (request) => grantFor(new URL(request.url).searchParams.get("token") ?? ""),
+  authorize: (request) => {
+    const bearer = request.headers.get("authorization")?.replace(/^Bearer /, "");
+    return grantFor(bearer ?? new URL(request.url).searchParams.get("token") ?? "");
+  },
 });

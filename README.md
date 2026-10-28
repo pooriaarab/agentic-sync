@@ -7,8 +7,9 @@
 
 Live edits for people and agents on one document, with offline support.
 
-> Status: early. The sync server works. The client, offline support, version
-> history, CLI, and MCP server are not built yet. The package is not on npm yet.
+> Status: early. The sync server and the headless Node client work. Offline
+> support, version history, CLI, and MCP server are not built yet. The package
+> is not on npm yet.
 
 ## Features
 
@@ -19,6 +20,7 @@ Live edits for people and agents on one document, with offline support.
   A client cannot change either. The first socket that announces a client id
   owns it. Only that socket, or a new socket of the same principal, can
   update or remove it.
+- A headless Node client (`agentic-sync/client`) so an agent can join a document.
 - Storage in the object. Updates append to a log. Every 50 updates (set
   `SYNC_COMPACT_EVERY`) the log folds into one snapshot.
 - WebSocket hibernation. An idle document costs nothing.
@@ -63,6 +65,31 @@ A document id matches `[A-Za-z0-9_-]{1,128}`. Ids are case sensitive.
 
 An agent kind is one of `agent_of_human`, `agent_of_agent`, `agent`, or
 `user_token`. Only `human` is not machine-made.
+
+## Join a document from Node
+
+```ts
+import { SyncClient } from "agentic-sync/client";
+
+const client = await SyncClient.connect({
+  url: "wss://sync.example.com/api/v1/docs/notes/ws",
+  headers: { authorization: `Bearer ${token}` },
+  presence: { name: "Summary bot" },
+});
+await client.edit((doc) => doc.getText("body").insert(0, "Hello"));
+console.log(client.peers); // the other people and agents
+await client.disconnect();
+```
+
+`connect` resolves when the document matches the server. `edit` and `flush`
+resolve when the server has handled your changes. If your role is read-only,
+the server drops the edit and `client.denied` holds its reason.
+
+Your presence is `{ name, color, cursor }`. You do not set a `kind`. The server
+adds the `kind` of your grant to your presence, so people always see an agent
+as an agent. Each peer in `client.peers` carries that `kind`. Use any Yjs
+document type on `client.doc`.
+The client needs Node 22 or later and does not reconnect by itself yet.
 
 ## Swap the server
 

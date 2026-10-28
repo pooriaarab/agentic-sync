@@ -14,7 +14,7 @@ const shared = {
 // The worker builds on its own: it needs the Workers types, which clash
 // with the Node types the rest of the package uses.
 export default defineConfig([
-  { ...shared, entry: ["src/index.ts"], tsconfig: "tsconfig.json" },
+  { ...shared, entry: ["src/index.ts", "src/client/index.ts"], tsconfig: "tsconfig.json" },
   {
     ...shared,
     entry: ["src/worker.ts"],

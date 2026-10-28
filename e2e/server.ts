@@ -59,6 +59,14 @@ export async function startWorker(vars: Record<string, string> = {}): Promise<Se
   };
 }
 
+export async function until(check: () => boolean | Promise<boolean>, what: string): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (!(await check())) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
 export interface HalfOpenProxy {
   port: number;
   // Cuts the client side with no close frame. The server side stays

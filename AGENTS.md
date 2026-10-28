@@ -11,9 +11,10 @@ connect and with what role.
 ## What exists now
 
 - `agentic-sync/worker`: `createSyncWorker({ authorize })` and `SyncRoom`.
+- `agentic-sync/client`: `SyncClient.connect`, `edit`, `flush`, `peers`, `disconnect`.
 - `agentic-sync`: protocol helpers, the `Realtime` interface, and the types.
 
-The client, offline support, version history, CLI, and MCP server come later.
+Offline support, version history, CLI, and MCP server come later.
 
 ## Rules
 
