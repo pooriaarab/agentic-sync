@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { Peer, until } from "./peer.js";
-import { startWorker, type Server } from "./server.js";
+import { halfOpenProxy, startWorker, type Server } from "./server.js";
 
 let server: Server;
 
@@ -23,7 +23,8 @@ const metaOf = async (doc: string, token = "editor") =>
   }>;
 const text = (peer: Peer) => peer.doc.getText("body").toString();
 const MAX_STATE_CHARS = 8192;
-const MAX_IDS_PER_SOCKET = 32;
+const MAX_IDS_PER_SOCKET = 8;
+const MAX_IDS_PER_PRINCIPAL = 16;
 const MAX_IDS_PER_DOC = 256;
 const lastState = (peer: Peer, id: number): Record<string, unknown> | null => {
   const entry = peer.awareness.filter((e) => e.id === id).at(-1);
@@ -158,30 +159,106 @@ describe("sync worker under wrangler dev", () => {
     expect(watcher.awareness).toEqual([]);
   });
 
-  test("the relay holds a bounded number of entries per document", async () => {
+  test("one principal cannot fill the relay with many sockets", async () => {
+    const watcher = await join("cap-principal", "editor2");
+    const idsFor = (base: number) =>
+      Array.from({ length: MAX_IDS_PER_SOCKET }, (_, i) => ({
+        id: base + i,
+        clock: 1,
+        state: JSON.stringify({ n: base + i }),
+      }));
+    const first = await join("cap-principal", "editor");
+    first.sendPresence(idsFor(5000));
+    const second = await join("cap-principal", "editor");
+    second.sendPresence(idsFor(5100));
+    await until(() => lastState(watcher, 5100 + MAX_IDS_PER_SOCKET - 1) !== null, "two sockets");
+    expect(MAX_IDS_PER_PRINCIPAL).toBe(2 * MAX_IDS_PER_SOCKET);
+    const third = await join("cap-principal", "editor");
+    third.sendPresence(idsFor(5200));
+    expect(await third.closed).toBe(1008);
+    expect(lastState(watcher, 5200)).toBeNull();
+    // Another principal still gets its own share.
+    const other = await join("cap-principal", "editor2");
+    other.setPresence(5300, 1, { name: "other" });
+    await until(() => lastState(watcher, 5300) !== null, "another principal's presence");
+  });
+
+  test("a full relay refuses the new entry and keeps every socket open", async () => {
     const watcher = await join("cap-doc", "editor2");
-    const full = Math.ceil(MAX_IDS_PER_DOC / MAX_IDS_PER_SOCKET);
-    const peers: Peer[] = [];
-    for (let p = 0; p < full; p++) {
-      const peer = await join("cap-doc", "editor");
-      const base = 2000 + p * MAX_IDS_PER_SOCKET;
-      peer.sendPresence(
-        Array.from({ length: MAX_IDS_PER_SOCKET }, (_, i) => ({
-          id: base + i,
-          clock: 1,
-          state: JSON.stringify({ n: base + i }),
-        })),
-      );
-      peers.push(peer);
+    const fillers: Peer[] = [];
+    let next = 2000;
+    for (let user = 0; user < MAX_IDS_PER_DOC / MAX_IDS_PER_PRINCIPAL; user++) {
+      for (let socket = 0; socket < MAX_IDS_PER_PRINCIPAL / MAX_IDS_PER_SOCKET; socket++) {
+        const peer = await join("cap-doc", `user-${user}`);
+        peer.sendPresence(
+          Array.from({ length: MAX_IDS_PER_SOCKET }, () => {
+            const id = next++;
+            return { id, clock: 1, state: JSON.stringify({ n: id }) };
+          }),
+        );
+        fillers.push(peer);
+      }
     }
-    await until(() => lastState(watcher, 2000 + MAX_IDS_PER_DOC - 1) !== null, "the relay to fill");
-    const extra = await join("cap-doc", "editor");
-    extra.sendPresence([{ id: 9000, clock: 1, state: JSON.stringify({ n: 1 }) }]);
-    expect(await extra.closed).toBe(1008);
+    await until(() => lastState(watcher, next - 1) !== null, "the relay to fill");
+    // A stock client sends its own state as soon as it connects.
+    const innocent = await join("cap-doc", "editor");
+    innocent.setPresence(9000, 1, { name: "late" });
+    await until(() => innocent.denied.includes("presence is full"), "the presence-full signal");
     expect(lastState(watcher, 9000)).toBeNull();
+    // Document sync still works for the refused socket, both ways.
+    innocent.doc.getText("body").insert(0, "still editing");
+    await until(() => text(watcher) === "still editing", "an edit from the refused socket");
+    watcher.doc.getText("body").insert(0, "reply:");
+    await until(() => text(innocent).startsWith("reply:"), "an edit for the refused socket");
+    // A holder keeps updating its own entry on a full relay.
+    fillers[0].setPresence(2000, 2, { n: "again" });
+    await until(() => lastState(watcher, 2000)?.n === "again", "an update on a full relay");
+    // A holder that leaves frees room, and the next entry fits.
+    fillers[1].close();
+    await until(() => lastState(watcher, 2000 + MAX_IDS_PER_SOCKET) === null, "a holder to leave");
+    innocent.setPresence(9000, 2, { name: "late" });
+    await until(() => lastState(watcher, 9000) !== null, "the entry to fit after room frees");
     const late = await join("cap-doc", "editor2");
     await until(() => late.awareness.length > 0, "the stored presence");
-    expect(new Set(late.awareness.map((e) => e.id)).size).toBe(MAX_IDS_PER_DOC);
+    expect(new Set(late.awareness.map((e) => e.id)).size).toBeLessThanOrEqual(MAX_IDS_PER_DOC);
+  });
+
+  test("the same principal takes over a client id from a half-open socket", async () => {
+    const proxy = await halfOpenProxy(Number(new URL(server.http).port));
+    const watcher = await join("takeover", "editor2");
+    const old = new Peer(`ws://127.0.0.1:${proxy.port}/api/v1/docs/takeover/ws?token=editor`);
+    await old.synced;
+    old.doc.getText("body").insert(0, "before");
+    old.setPresence(301, 1, { name: "old" });
+    old.setPresence(302, 1, { name: "old second id" });
+    await until(
+      () => text(watcher) === "before" && lastState(watcher, 301) !== null,
+      "the first socket's work",
+    );
+    // The network drops. The server sees no close frame and keeps the socket.
+    proxy.blackhole();
+    await old.closed;
+    const fresh = await join("takeover", "editor");
+    expect(text(fresh)).toBe("before");
+    fresh.setPresence(301, 2, { name: "fresh" });
+    await until(() => lastState(watcher, 301)?.name === "fresh", "the new socket's presence");
+    fresh.doc.getText("body").insert(6, " after");
+    await until(() => text(watcher) === "before after", "an edit from the new socket");
+    // The server closed the old socket with its own code.
+    await until(() => proxy.closeCodes().includes(4001), "the server to close the old socket");
+    // The old socket's other id goes away. The taken-over id never blinks.
+    await until(
+      () => watcher.awareness.some((e) => e.id === 302 && e.state === "null"),
+      "the old socket's other id to clear",
+    );
+    expect(watcher.awareness.some((e) => e.id === 301 && e.state === "null")).toBe(false);
+    const late = await join("takeover", "viewer");
+    await until(() => lastState(late, 301)?.name === "fresh", "one entry for a late joiner");
+    // A different principal still cannot claim the id.
+    const thief = await join("takeover", "viewer");
+    thief.setPresence(301, 9, { name: "thief" });
+    expect(await thief.closed).toBe(1008);
+    await proxy.stop();
   });
 
   test("a bad presence entry drops the socket and relays nothing", async () => {

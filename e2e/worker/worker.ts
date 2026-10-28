@@ -12,6 +12,12 @@ const TOKENS: Record<string, Grant> = {
   viewer: { principal: { id: "person-3", kind: "human" }, role: "viewer" },
 };
 
+// Test only. "user-N" is a distinct editor, for tests that need many principals.
+function grantFor(token: string): Grant | null {
+  if (/^user-\d+$/.test(token)) return { principal: { id: token, kind: "human" }, role: "editor" };
+  return TOKENS[token] ?? null;
+}
+
 export default createSyncWorker({
-  authorize: (request) => TOKENS[new URL(request.url).searchParams.get("token") ?? ""] ?? null,
+  authorize: (request) => grantFor(new URL(request.url).searchParams.get("token") ?? ""),
 });

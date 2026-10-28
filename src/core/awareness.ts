@@ -9,7 +9,10 @@ export interface AwarenessEntry {
 }
 
 export const MAX_STATE_CHARS = 8192;
-export const MAX_IDS_PER_SOCKET = 32;
+export const MAX_IDS_PER_SOCKET = 8;
+// All sockets of one principal count together, so one principal cannot
+// fill the document. Many principals are needed for that.
+export const MAX_IDS_PER_PRINCIPAL = 16;
 export const MAX_ENTRIES_PER_DOC = 256;
 
 export function decodeAwarenessUpdate(update: Uint8Array): AwarenessEntry[] {
@@ -43,6 +46,21 @@ export interface Identity {
   name?: string;
 }
 
+// Names a socket and the principal behind it.
+export interface Owner {
+  socket: string;
+  principal: string;
+}
+
+export interface Applied {
+  // The entries to relay, with the identity stamped in.
+  accepted: AwarenessEntry[];
+  // New entries left out because the document is full.
+  refused: number;
+  // Sockets that lost a client id to a new socket of the same principal.
+  displaced: string[];
+}
+
 // A client broke a presence rule. The caller closes its socket.
 export class AwarenessViolation extends Error {}
 
@@ -64,47 +82,67 @@ function parseState(state: string): Record<string, unknown> {
 // resend their state on a heartbeat, which refills it after a wake.
 //
 // The first socket that announces a client id owns it. Only the owner
-// can update or remove it. Each socket owns a few ids and the document
-// holds a few entries, so a client cannot grow the relay without bound.
+// can update or remove it. A new socket of the same principal can take
+// the id over, as a client does when it reconnects before the server
+// sees the old connection die. Each socket owns a few ids, each
+// principal owns a few more, and the document holds a few entries, so a
+// client cannot grow the relay without bound. A full document refuses
+// new entries. It does not punish the socket that sent one.
 export class AwarenessRelay {
   private readonly entries = new Map<number, AwarenessEntry>();
   private readonly owners = new Map<number, string>();
   private readonly owned = new Map<string, Set<number>>();
+  private readonly principalOf = new Map<string, string>();
+  private readonly principalIds = new Map<string, Set<number>>();
 
   get size(): number {
     return this.entries.size;
   }
 
-  idsOf(owner: string): number[] {
-    return [...(this.owned.get(owner) ?? [])];
+  idsOf(socket: string): number[] {
+    return [...(this.owned.get(socket) ?? [])];
   }
 
   // Restores ownership after a wake. The states come back with the
   // next heartbeat.
-  claim(owner: string, ids: number[]): void {
+  claim(owner: Owner, ids: number[]): void {
     for (const id of ids) this.own(owner, id);
   }
 
-  private own(owner: string, id: number): void {
-    this.owners.set(id, owner);
-    const ids = this.owned.get(owner) ?? new Set<number>();
+  private own(owner: Owner, id: number): void {
+    this.owners.set(id, owner.socket);
+    this.principalOf.set(owner.socket, owner.principal);
+    const ids = this.owned.get(owner.socket) ?? new Set<number>();
     ids.add(id);
-    this.owned.set(owner, ids);
+    this.owned.set(owner.socket, ids);
+    const mine = this.principalIds.get(owner.principal) ?? new Set<number>();
+    mine.add(id);
+    this.principalIds.set(owner.principal, mine);
   }
 
-  // Checks the whole frame before it changes anything, then returns
-  // the entries it accepted, with the identity stamped in. The caller
-  // relays those entries and nothing else. Throws AwarenessViolation
-  // for a frame that breaks a rule, and a plain error for a frame that
-  // does not decode.
-  apply(update: Uint8Array, owner: string, identity: Identity): AwarenessEntry[] {
+  // Moves an id to a new socket of the same principal. The old state
+  // goes, so the new socket's clock does not have to beat it.
+  private transfer(owner: Owner, id: number, holder: string): void {
+    this.owned.get(holder)?.delete(id);
+    this.entries.delete(id);
+    this.own(owner, id);
+  }
+
+  // Checks the whole frame before it changes anything. Throws
+  // AwarenessViolation for a frame that breaks a rule of the socket or
+  // its principal, and a plain error for a frame that does not decode.
+  // A full document is not a violation: it leaves the entry out.
+  apply(update: Uint8Array, owner: Owner, identity: Identity): Applied {
     const incoming = decodeAwarenessUpdate(update);
     const claims = new Set<number>();
-    const additions = new Set<number>();
+    const takeovers = new Set<number>();
     for (const entry of incoming) {
       const holder = this.owners.get(entry.id);
-      if (holder !== undefined && holder !== owner) {
-        throw new AwarenessViolation("client id belongs to another socket");
+      if (holder !== undefined && holder !== owner.socket) {
+        if (this.principalOf.get(holder) !== owner.principal) {
+          throw new AwarenessViolation("client id belongs to another principal");
+        }
+        takeovers.add(entry.id);
       }
       if (entry.state.length > MAX_STATE_CHARS) {
         throw new AwarenessViolation("presence state is too large");
@@ -112,24 +150,34 @@ export class AwarenessRelay {
       if (entry.state === "null") continue;
       parseState(entry.state);
       if (holder === undefined) claims.add(entry.id);
-      if (!this.entries.has(entry.id)) additions.add(entry.id);
     }
-    if ((this.owned.get(owner)?.size ?? 0) + claims.size > MAX_IDS_PER_SOCKET) {
+    if ((this.owned.get(owner.socket)?.size ?? 0) + claims.size + takeovers.size > MAX_IDS_PER_SOCKET) {
       throw new AwarenessViolation("too many client ids on one socket");
     }
-    if (this.entries.size + additions.size > MAX_ENTRIES_PER_DOC) {
-      throw new AwarenessViolation("too many presence entries on this document");
+    if ((this.principalIds.get(owner.principal)?.size ?? 0) + claims.size > MAX_IDS_PER_PRINCIPAL) {
+      throw new AwarenessViolation("too many client ids for one principal");
     }
 
     const accepted: AwarenessEntry[] = [];
+    const displaced = new Set<string>();
+    let refused = 0;
     for (const entry of incoming) {
+      const holder = this.owners.get(entry.id);
+      if (holder !== undefined && holder !== owner.socket) {
+        this.transfer(owner, entry.id, holder);
+        displaced.add(holder);
+      }
       const current = this.entries.get(entry.id);
       if (current !== undefined && current.clock > entry.clock) continue;
       if (entry.state === "null") {
         // An id nobody announced has no state to remove.
-        if (this.owners.get(entry.id) !== owner) continue;
+        if (this.owners.get(entry.id) !== owner.socket) continue;
         this.entries.delete(entry.id);
         accepted.push(entry);
+        continue;
+      }
+      if (current === undefined && this.entries.size >= MAX_ENTRIES_PER_DOC) {
+        refused += 1;
         continue;
       }
       const state = parseState(entry.state);
@@ -140,25 +188,31 @@ export class AwarenessRelay {
       this.entries.set(entry.id, stamped);
       accepted.push(stamped);
     }
-    return accepted;
+    return { accepted, refused, displaced: [...displaced] };
   }
 
   encode(): Uint8Array {
     return encodeAwarenessUpdate([...this.entries.values()]);
   }
 
-  // Frees every id the owner held. Builds the update that tells peers
+  // Frees every id the socket held. Builds the update that tells peers
   // these clients are gone.
-  release(owner: string): Uint8Array | null {
+  release(socket: string): Uint8Array | null {
     const gone: AwarenessEntry[] = [];
-    for (const id of this.owned.get(owner) ?? []) {
+    const principal = this.principalOf.get(socket);
+    for (const id of this.owned.get(socket) ?? []) {
       this.owners.delete(id);
+      this.principalIds.get(principal ?? "")?.delete(id);
       const current = this.entries.get(id);
       if (current === undefined) continue;
       this.entries.delete(id);
       gone.push({ id, clock: current.clock + 1, state: "null" });
     }
-    this.owned.delete(owner);
+    this.owned.delete(socket);
+    this.principalOf.delete(socket);
+    if (principal !== undefined && this.principalIds.get(principal)?.size === 0) {
+      this.principalIds.delete(principal);
+    }
     return gone.length === 0 ? null : encodeAwarenessUpdate(gone);
   }
 }

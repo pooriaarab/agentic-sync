@@ -17,7 +17,8 @@ Live edits for people and agents on one document, with offline support.
 - Presence relay: peers see each other's awareness state. The server sets the
   `kind` of each state from the grant, and the `name` when the grant has one.
   A client cannot change either. The first socket that announces a client id
-  owns it, and only that socket can update or remove it.
+  owns it. Only that socket, or a new socket of the same principal, can
+  update or remove it.
 - Storage in the object. Updates append to a log. Every 50 updates (set
   `SYNC_COMPACT_EVERY`) the log folds into one snapshot.
 - WebSocket hibernation. An idle document costs nothing.
@@ -77,10 +78,17 @@ TypeScript with no Cloudflare code.
   The server closes a connection that sends a message over 1 MiB. It refuses
   an update that would take the document past 1.5 MiB, and answers with a
   permission-denied message.
-- Presence limits: one socket owns up to 32 client ids, one document holds up to
-  256 presence entries, and one state is up to 8192 characters. A socket that
-  breaks a limit, sends a state that is not a JSON object, or uses an id that
-  belongs to another socket gets closed with code 1008.
+- Presence limits: one socket owns up to 8 client ids, all sockets of one
+  principal together own up to 16, and one document holds up to 256 presence
+  entries. One state is up to 8192 characters. A socket that breaks a limit,
+  sends a state that is not a JSON object, or uses an id that belongs to
+  another principal gets closed with code 1008.
+- A full document refuses new presence entries. The socket stays open and
+  document sync keeps working. The server sends a permission-denied message
+  with the reason `presence is full`. Entries that already exist keep updating.
+- A new socket of the same principal can take over a client id. The server
+  closes the old socket with code 4001. This lets a client reconnect before the
+  server notices that the old connection is dead.
 - A jurisdiction is part of the object id. Set it before the first write.
   Changing it later points at an empty document.
 - Presence lives in memory. After a hibernation the server forgets it until the

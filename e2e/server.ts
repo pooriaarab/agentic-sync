@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync } from "node:fs";
-import { createServer } from "node:net";
+import { connect, createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -56,5 +56,63 @@ export async function startWorker(vars: Record<string, string> = {}): Promise<Se
         child.once("exit", () => resolve());
         child.kill("SIGTERM");
       }),
+  };
+}
+
+export interface HalfOpenProxy {
+  port: number;
+  // Cuts the client side with no close frame. The server side stays
+  // open and silent, as a dead network path looks to the server.
+  blackhole(): void;
+  // Close codes the server sent on the cut sockets.
+  closeCodes(): number[];
+  stop(): Promise<void>;
+}
+
+// A TCP relay in front of the worker, to drop a connection the way a
+// laptop leaving a network does.
+export async function halfOpenProxy(target: number): Promise<HalfOpenProxy> {
+  const pairs: { client: Socket; upstream: Socket }[] = [];
+  const cut: Buffer[] = [];
+  const listener = createServer((client) => {
+    const upstream = connect(target, "127.0.0.1");
+    pairs.push({ client, upstream });
+    client.pipe(upstream);
+    upstream.pipe(client);
+    client.on("error", () => undefined);
+    upstream.on("error", () => undefined);
+  });
+  await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));
+  const { port } = listener.address() as { port: number };
+  return {
+    port,
+    blackhole() {
+      for (const { client, upstream } of pairs) {
+        client.unpipe(upstream);
+        upstream.unpipe(client);
+        upstream.on("data", (chunk: Buffer) => cut.push(chunk));
+        // Unpiping leaves the stream paused.
+        upstream.resume();
+        client.destroy();
+      }
+    },
+    closeCodes() {
+      // A server close frame: 0x88, a length, then the two code bytes.
+      const bytes = Buffer.concat(cut);
+      const codes: number[] = [];
+      for (let i = 0; i + 3 < bytes.length; i++) {
+        if (bytes[i] === 0x88 && bytes[i + 1] >= 2 && bytes[i + 1] < 126) {
+          codes.push(bytes.readUInt16BE(i + 2));
+        }
+      }
+      return codes;
+    },
+    async stop() {
+      for (const { client, upstream } of pairs) {
+        client.destroy();
+        upstream.destroy();
+      }
+      await new Promise<void>((resolve) => listener.close(() => resolve()));
+    },
   };
 }

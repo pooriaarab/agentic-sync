@@ -4,9 +4,11 @@ import {
   AwarenessRelay,
   AwarenessViolation,
   encodeAwarenessUpdate,
+  type Owner,
 } from "../core/awareness.js";
 import {
   awarenessMessage,
+  permissionDeniedMessage,
   readMessage,
   syncStep1Message,
   updateMessage,
@@ -29,12 +31,19 @@ const DEFAULT_COMPACT_EVERY = 50;
 // Storage deletes up to 128 keys per call, so a batch never exceeds that.
 const MAX_COMPACT_EVERY = 128;
 const FROM_STORAGE = "storage";
+// A new socket of the same principal took over this socket's client id.
+const CLOSE_REPLACED = 4001;
+const PRESENCE_FULL = "presence is full";
 
 interface Attachment {
   grant: Grant;
   // Names this socket in the presence relay.
   socketId: string;
   awarenessIds: number[];
+}
+
+function ownerOf({ grant, socketId }: Attachment): Owner {
+  return { socket: socketId, principal: `${grant.principal.kind}:${grant.principal.id}` };
 }
 
 // One stored Yjs update and who made it.
@@ -81,8 +90,8 @@ export class SyncRoom extends DurableObject<RoomEnv> {
       this.onUpdate(update, origin),
     );
     for (const ws of ctx.getWebSockets()) {
-      const { socketId, awarenessIds } = ws.deserializeAttachment() as Attachment;
-      this.relay.claim(socketId, awarenessIds);
+      const attachment = ws.deserializeAttachment() as Attachment;
+      this.relay.claim(ownerOf(attachment), attachment.awarenessIds);
     }
     ctx.blockConcurrencyWhile(() => this.load());
   }
@@ -140,7 +149,7 @@ export class SyncRoom extends DurableObject<RoomEnv> {
 
   private broadcast(data: Uint8Array, except?: WebSocket): void {
     for (const peer of this.ctx.getWebSockets()) {
-      if (peer !== except) peer.send(data);
+      if (peer !== except && peer.readyState === WebSocket.OPEN) peer.send(data);
     }
   }
 
@@ -198,9 +207,9 @@ export class SyncRoom extends DurableObject<RoomEnv> {
     if (incoming.denied) ws.send(incoming.denied);
     if (incoming.queryAwareness) ws.send(awarenessMessage(this.relay.encode()));
     if (incoming.awareness) {
-      let accepted;
+      let applied;
       try {
-        accepted = this.relay.apply(incoming.awareness, attachment.socketId, {
+        applied = this.relay.apply(incoming.awareness, ownerOf(attachment), {
           kind: principal.kind,
           name: attachment.grant.name,
         });
@@ -210,12 +219,28 @@ export class SyncRoom extends DurableObject<RoomEnv> {
         ws.close(violation ? 1008 : 1007, violation ? error.message : "malformed message");
         return;
       }
-      if (accepted.length > 0) {
+      for (const socketId of applied.displaced) this.replace(socketId);
+      if (applied.refused > 0) ws.send(permissionDeniedMessage(PRESENCE_FULL));
+      if (applied.accepted.length > 0) {
         attachment.awarenessIds = this.relay.idsOf(attachment.socketId);
         ws.serializeAttachment(attachment);
-        this.broadcast(awarenessMessage(encodeAwarenessUpdate(accepted)), ws);
+        this.broadcast(awarenessMessage(encodeAwarenessUpdate(applied.accepted)), ws);
       }
     }
+  }
+
+  // Closes a socket that lost a client id to a new socket of the same
+  // principal. Its other ids go with it. The server does not wait for
+  // the close handshake, because a half-open socket never answers.
+  private replace(socketId: string): void {
+    const old = this.ctx.getWebSockets().find(
+      (peer) => (peer.deserializeAttachment() as Attachment).socketId === socketId,
+    );
+    if (old === undefined) return;
+    this.dropPresence(old);
+    // A wake must not hand this socket's ids back to it.
+    old.serializeAttachment({ ...(old.deserializeAttachment() as Attachment), awarenessIds: [] });
+    old.close(CLOSE_REPLACED, "client id taken over by a new connection");
   }
 
   // Tells peers that this socket's clients are gone. Safe to call twice.
