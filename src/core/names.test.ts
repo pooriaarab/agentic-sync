@@ -2,9 +2,9 @@ import { describe, expect, test } from "vitest";
 import { MAX_NAME_LENGTH, assertSafePeerName, displayPeerName, isSafePeerName } from "./names.js";
 
 describe("peer names", () => {
-  test.each(["Ana", "Zoë", "Summary bot", "O'Brien-Lee", "李雷", "Åsa 2", "Agent_7.1", "e\u0301"])(
+  test.each(["Ana", "Zo\u00EB", "Summary bot", "O'Brien-Lee", "李雷", "\u00C5sa 2", "Agent_7.1", "Claude (work)", "e\u0301".normalize("NFC")])(
     "accepts %s",
-    (name) => expect(isSafePeerName(name.normalize("NFC"))).toBe(true),
+    (name) => expect(isSafePeerName(name)).toBe(true),
   );
 
   const hostile: Record<string, string> = {

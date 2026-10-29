@@ -149,10 +149,7 @@ export class AwarenessRelay {
         throw new AwarenessViolation("presence state is too large");
       }
       if (entry.state === "null") continue;
-      const claimed = parseState(entry.state);
-      if ("name" in claimed && !isSafePeerName(claimed.name)) {
-        throw new AwarenessViolation("presence name is not allowed");
-      }
+      parseState(entry.state);
       if (holder === undefined) claims.add(entry.id);
     }
     if ((this.owned.get(owner.socket)?.size ?? 0) + claims.size + takeovers.size > MAX_IDS_PER_SOCKET) {
@@ -185,6 +182,9 @@ export class AwarenessRelay {
         continue;
       }
       const state = parseState(entry.state);
+      // An unsafe name is left out, not punished: an older client keeps
+      // its socket and its peers show the fallback name.
+      if ("name" in state && !isSafePeerName(state.name)) delete state.name;
       state.kind = identity.kind;
       if (identity.name !== undefined) state.name = identity.name;
       const stamped = { id: entry.id, clock: entry.clock, state: JSON.stringify(state) };

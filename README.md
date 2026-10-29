@@ -166,10 +166,11 @@ Your presence is `{ name, color, cursor }`. You do not set a `kind`. The server
 adds the `kind` of your grant to your presence, so people always see an agent
 as an agent. Each peer in `client.peers` carries that `kind`, and `machine` is
 true for every kind except a person. A name has 1 to 40 letters, digits, spaces,
-or `. _ ' -`. It has no bidi controls, zero-width characters, or other
-invisible characters. The client throws for any other name. The server closes
-a socket that sends one (code 1008). Peers that still carry a bad name show as
-`Unknown`. Check a name with `isSafePeerName`. Use any Yjs document type on `client.doc`.
+`’`, or `. _ ' ( ) -`. It has no bidi controls, zero-width characters, or other
+invisible characters. The client throws for any other name (it first converts
+a name to NFC). The server drops an unsafe name from the presence it relays,
+and peers show `Unknown`. The socket stays open. The set does not stop
+look-alike letters from other scripts. Check a name with `isSafePeerName`. Use any Yjs document type on `client.doc`.
 The client needs Node 22 or later. It reconnects only if you pass `reconnect: {}`.
 
 ## Use the CLI
@@ -297,7 +298,7 @@ TypeScript with no Cloudflare code.
 - Presence limits: one socket owns up to 8 client ids, all sockets of one
   principal together own up to 16, and one document holds up to 256 presence
   entries. One state is up to 8192 characters. A socket that breaks a limit,
-  sends a state that is not a JSON object, sends a name that is not safe, or uses an id that belongs to
+  sends a state that is not a JSON object, or uses an id that belongs to
   another principal gets closed with code 1008.
 - A full document refuses new presence entries. The socket stays open and
   document sync keeps working. The server sends a permission-denied message

@@ -2,9 +2,13 @@
 
 ## Unreleased
 
-- Peer names use a closed character set, with a 40 character cap. The client
-  refuses other names and the server closes a socket that sends one. New
-  exports: `isSafePeerName`, `assertSafePeerName`, `displayPeerName`.
+- Peer names use a closed character set, with a 40 character cap. The set is
+  letters, digits, marks, spaces, and `. _ ' ’ ( ) -`. Emoji and `@` are out.
+  The client now throws for another name: change `--name` and
+  `AGENTIC_SYNC_NAME` values that use them. The server drops an unsafe name
+  from the presence it relays and keeps the socket, so older clients keep
+  working. New exports: `isSafePeerName`, `assertSafePeerName`,
+  `displayPeerName`.
 
 ## 0.2.0
 

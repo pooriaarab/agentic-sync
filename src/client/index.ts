@@ -102,7 +102,7 @@ export class SyncClient {
       },
     );
     if (options.presence) {
-      const name = assertSafePeerName(options.presence.name);
+      const name = assertSafePeerName(options.presence.name.normalize("NFC"));
       const { color = colorFor(name), cursor = null } = options.presence;
       this.awareness.setLocalState({ name, color, cursor } satisfies Presence);
     }
@@ -259,7 +259,7 @@ export class SyncClient {
   }
 
   setPresence(patch: Partial<Presence>): void {
-    if (patch.name !== undefined) assertSafePeerName(patch.name);
+    if (patch.name !== undefined) patch = { ...patch, name: assertSafePeerName(patch.name.normalize("NFC")) };
     this.awareness.setLocalState({ ...this.awareness.getLocalState(), ...patch });
   }
 

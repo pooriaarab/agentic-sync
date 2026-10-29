@@ -10,7 +10,7 @@ const MAX_MARK_RUN = 3;
 
 const WORD = String.raw`[\p{L}\p{N}]`;
 const PART = String.raw`(?:${WORD}\p{M}*)`;
-const PUNCT = String.raw`[ ._'’-]`;
+const PUNCT = String.raw`[ ._'’()-]`;
 const SHAPE = new RegExp(`^${PART}(?:${PART}|${PUNCT})*$`, "u");
 // Letters and marks that draw nothing.
 const INVISIBLE = /[\u034F\u115F\u1160\u17B4\u17B5\u180B-\u180F\u3164\uFE00-\uFE0F\uFFA0\u{E0100}-\u{E01EF}]/u;

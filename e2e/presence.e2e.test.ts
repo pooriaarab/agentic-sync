@@ -209,10 +209,6 @@ describe("the server against a hostile client", () => {
       { name: "too large", entry: { id: 71, clock: 1, state: JSON.stringify({ x: "a".repeat(MAX_STATE_CHARS) }) } },
       { name: "not JSON", entry: { id: 72, clock: 1, state: "{nope" } },
       { name: "not an object", entry: { id: 73, clock: 1, state: JSON.stringify([1, 2]) } },
-      { name: "bidi override in the name", entry: { id: 74, clock: 1, state: JSON.stringify({ name: "Ana\u202Eevil" }) } },
-      { name: "zero-width name", entry: { id: 75, clock: 1, state: JSON.stringify({ name: "A\u200Bna" }) } },
-      { name: "name too long", entry: { id: 76, clock: 1, state: JSON.stringify({ name: "a".repeat(41) }) } },
-      { name: "name that is not a string", entry: { id: 77, clock: 1, state: JSON.stringify({ name: { x: 1 } }) } },
     ];
     for (const { entry } of cases) {
       const bad = await join("bad-state", "editor");
