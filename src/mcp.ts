@@ -66,6 +66,20 @@ export function createMcpServer(env: Record<string, string | undefined> = proces
     (a) => guard((t) => sdk.restoreSnapshot(t, a.doc, a.name)),
   );
   server.registerTool(
+    "doc_blame",
+    {
+      description:
+        "Read a text root as runs, each with the person or agent that wrote it. author is null where the log has no record. Pass snapshot to read an older version.",
+      inputSchema: {
+        doc,
+        root: z.string().describe("The name of the text root."),
+        snapshot: z.string().optional().describe("A snapshot name."),
+      },
+      annotations: read,
+    },
+    (a) => guard((t) => sdk.blame(t, a.doc, a.root, a.snapshot)),
+  );
+  server.registerTool(
     "doc_presence",
     { description: "List the other people and agents on the document.", inputSchema: { doc }, annotations: read },
     (a) => guard((t) => sdk.listPeers(t, a.doc)),

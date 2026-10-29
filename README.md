@@ -39,6 +39,9 @@ npm install agentic-realtime
   drops their updates and answers with a permission-denied message.
 - Author labels. Each update keeps the kind of principal that wrote it. The
   API lists the contributors and marks the machine-made ones.
+- Who wrote what. A log keeps which principal sent which content, also after
+  compaction and inside each snapshot. `blame` shows it as runs of text, with
+  agents marked as machine-made.
 - Live revocation. The host can revoke a principal or cap its role while it is
   connected. A timer asks the host again who each socket is.
 - Data residency. Set `SYNC_JURISDICTION=eu` to pin documents to the EU.
@@ -74,6 +77,8 @@ Copy `wrangler.jsonc` for the Durable Object binding and the migration.
 | `GET /api/v1/docs/:id` | Read the role, jurisdiction, update count, compaction count, and contributors. |
 | `GET/POST /api/v1/docs/:id/snapshots` | List snapshots, or save one (editors only). |
 | `GET /api/v1/docs/:id/snapshots/:name` | Read a snapshot as a Yjs update. |
+| `GET /api/v1/docs/:id/attribution` | Read who sent which content. Any role may read it. |
+| `GET /api/v1/docs/:id/snapshots/:name/attribution` | The same log, as of that snapshot. |
 | `GET /health` | Check that the Worker runs. |
 
 A document id matches `[A-Za-z0-9_-]{1,128}`. Ids are case sensitive.
@@ -106,7 +111,7 @@ principal id is at most 256 characters. One document holds up to 1000 role caps 
 up to 10000 bans, counted apart, so a full table of role caps never stops a
 revoke. Past the ban limit, a revoke still closes the sockets, but it answers
 `409 CAP_LIMIT` because no ban is stored. A cap of `owner` narrows nothing,
-so the server drops it. Without a valid secret,
+so the server drops it. That also lifts a revoke, the same as `null`. Without a valid secret,
 the admin routes answer `503 ADMIN_DISABLED`. A Worker of your own can call the same
 methods through the `Realtime` port, or by Durable Object RPC on `SyncRoom`.
 
@@ -165,6 +170,7 @@ agentic-realtime doc get --doc notes
 agentic-realtime doc snapshot --doc notes --name before-review
 agentic-realtime doc restore --doc notes --name before-review
 agentic-realtime doc presence --doc notes
+agentic-realtime doc blame --doc notes --root body
 ```
 
 Each command joins the document, does one job, prints JSON, and leaves. `doc
@@ -177,10 +183,29 @@ rich-text, map, or array root and exits with 1, so it never deletes a document.
 ## Use the MCP server
 
 `agentic-realtime mcp` serves these tools over stdio: `doc_get`, `doc_apply`,
-`doc_snapshot`, `doc_snapshots`, `doc_restore`, and `doc_presence`. Set
+`doc_snapshot`, `doc_snapshots`, `doc_restore`, `doc_blame`, and `doc_presence`. Set
 `AGENTIC_SYNC_URL`, `AGENTIC_SYNC_TOKEN`, and optionally `AGENTIC_SYNC_NAME` in
 the server environment. A tool call never carries a credential. `doc_apply`
 returns an error for a root that is not text. The same operations are in `agentic-realtime/sdk`.
+
+## See who wrote what
+
+Yjs names each piece of content by a client id and a clock. The room keeps a
+log of ranges: which principal (id and kind) sent each run of those names. It
+folds contiguous writes of one client into one range. It saves the log with
+every compaction, and each named snapshot keeps a copy.
+
+```ts
+import { blame } from "agentic-realtime/sdk";
+
+const spans = await blame({ server, token }, "notes", "body");
+// [{ text: "Hi ", author: { id: "p1", kind: "human", machine: false } },
+//  { text: "bot", author: { id: "a1", kind: "agent_of_human", machine: true } }]
+await blame({ server, token }, "notes", "body", "before-review"); // as of a snapshot
+```
+
+`author` is `null` for text that no range names. `getAttribution` returns the raw
+log. The machine label comes from the kind, never from storage.
 
 ## Work offline in the browser
 
@@ -241,8 +266,17 @@ TypeScript with no Cloudflare code.
 - The IndexedDB tests run on `fake-indexeddb` in Node, not in a real browser.
 - Presence lives in memory. After a hibernation the server forgets it until the
   clients send their next heartbeat, within about 15 seconds.
-- The server stores the author of each update. After compaction it keeps the
-  set of all authors, not the author of each single update.
+- The attribution log keeps up to 4000 ranges (set `SYNC_ATTRIBUTION_MAX_RANGES`,
+  4 to 20000). Each new client id starts a range, so a client that reconnects
+  often uses them fast. Past the limit the oldest ranges go, `dropped` counts
+  them, and their text shows as unattributed. The log is not a signed record.
+- The log names who sent an insert. It does not name who deleted. It covers text
+  roots. Content that a document held before this version has no range until
+  someone rewrites it. A snapshot made before this version has no log, and
+  its attribution answers 404.
+- The author of a range is the principal that sent the update. A principal can
+  send a range of ids that nobody has used yet. The first range recorded for
+  an id wins, so a later sender cannot take over text that is already there.
 - Revocation by the host call is immediate. Revocation by the timer takes up to
   one interval. Without `createSyncRoom`, there is no timer. A room with open
   sockets from before you deployed `createSyncRoom` starts its timer at the next

@@ -27,6 +27,8 @@ export interface SyncEnv {
   SYNC_COMPACT_EVERY?: string;
   // Seconds between re-authorizations of open sockets. Default 60.
   SYNC_REAUTH_INTERVAL_SECONDS?: string;
+  // Ranges the attribution log keeps, 4 to 20000. Default 4000.
+  SYNC_ATTRIBUTION_MAX_RANGES?: string;
   // Bearer secret for /api/v1/admin. At least 32 bytes. Unset turns admin off.
   SYNC_ADMIN_SECRET?: string;
 }
@@ -119,6 +121,22 @@ export function createSyncWorker(options: SyncWorkerOptions): ExportedHandler<Sy
       : null;
     if (state === null) return refused(404, "NOT_FOUND");
     return new Response(new Uint8Array(state), { headers: { "content-type": "application/octet-stream" } });
+  });
+
+  app.get("/api/v1/docs/:id/attribution", async (c) => {
+    const id = c.req.param("id");
+    const opened = await open(c.req.raw, c.env, id);
+    if (opened instanceof Response) return opened;
+    return c.json(await opened.realtime.attribution(id));
+  });
+
+  app.get("/api/v1/docs/:id/snapshots/:name/attribution", async (c) => {
+    const id = c.req.param("id");
+    const opened = await open(c.req.raw, c.env, id);
+    if (opened instanceof Response) return opened;
+    const name = c.req.param("name");
+    const log = SNAPSHOT_NAME_PATTERN.test(name) ? await opened.realtime.attribution(id, name) : null;
+    return log === null ? refused(404, "NOT_FOUND") : c.json(log);
   });
 
   app.get("/api/v1/docs/:id/ws", async (c) => {

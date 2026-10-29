@@ -6,8 +6,8 @@ import { VERSION } from "./version.js";
 
 export class UsageError extends Error {}
 
-const FLAGS = ["server", "doc", "root", "text", "file", "mode", "at", "name", "wait"];
-const SUBCOMMANDS = ["get", "apply", "snapshot", "restore", "presence"];
+const FLAGS = ["server", "doc", "root", "text", "file", "mode", "at", "name", "wait", "snapshot"];
+const SUBCOMMANDS = ["get", "apply", "snapshot", "restore", "presence", "blame"];
 
 export interface CliRequest {
   command: "help" | "version" | "mcp" | "doc";
@@ -45,7 +45,7 @@ export function parseArgs(argv: string[]): CliRequest {
     }
   }
   if (flags.doc === undefined) throw new UsageError("doc commands need --doc <id>");
-  const need = { apply: ["root"], restore: ["name"] }[sub as "apply" | "restore"] ?? [];
+  const need = { apply: ["root"], restore: ["name"], blame: ["root"] }[sub as "apply" | "restore" | "blame"] ?? [];
   for (const flag of need) if (!flags[flag]) throw new UsageError(`doc ${sub} needs --${flag}`);
   if (sub === "apply" && flags.text === undefined && flags.file === undefined) {
     throw new UsageError("doc apply needs --text or --file");
@@ -54,7 +54,7 @@ export function parseArgs(argv: string[]): CliRequest {
 }
 
 const HELP = `agentic-realtime ${VERSION}
-Usage: agentic-realtime doc <get|apply|snapshot|restore|presence> --doc <id> [flags]
+Usage: agentic-realtime doc <get|apply|snapshot|restore|presence|blame> --doc <id> [flags]
        agentic-realtime mcp
 
 Set AGENTIC_SYNC_URL and AGENTIC_SYNC_TOKEN. The token stays off the command line.
@@ -64,6 +64,7 @@ Set AGENTIC_SYNC_URL and AGENTIC_SYNC_TOKEN. The token stays off the command lin
   snapshot [--name <n>]        Save a snapshot, or list them.
   restore --name <n>           Restore as a new edit.
   presence [--wait <ms>]       List the other peers.
+  blame --root <r> [--snapshot <n>]   Print each run of text with the principal that wrote it.
 
 Other flags: --server <url>, --name <label for peers>. The server sets your kind from the token.`;
 
@@ -103,6 +104,9 @@ export async function runCli(
         break;
       case "restore":
         result = await sdk.restoreSnapshot(target, doc, flags.name);
+        break;
+      case "blame":
+        result = await sdk.blame(target, doc, flags.root, flags.snapshot);
         break;
       default:
         result = await sdk.listPeers(target, doc, flags.wait === undefined ? undefined : Number(flags.wait));

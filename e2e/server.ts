@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 export interface Server {
+  // The storage folder. Pass it to startWorker to start again on the same data.
+  persist: string;
   http: string;
   ws: string;
   log(): string;
@@ -25,10 +27,13 @@ export function freePort(): Promise<number> {
 // Runs the test worker under wrangler dev with fresh storage. A worker
 // that just stopped can still hold the runtime socket for a moment, so a
 // start that finds it taken tries again.
-export async function startWorker(vars: Record<string, string> = {}): Promise<Server> {
+export async function startWorker(
+  vars: Record<string, string> = {},
+  persist: string = mkdtempSync(join(tmpdir(), "agentic-realtime-e2e-")),
+): Promise<Server> {
   for (let attempt = 1; ; attempt++) {
     try {
-      return await launchWorker(vars);
+      return await launchWorker(vars, persist);
     } catch (error) {
       if (attempt >= 4 || !String(error).includes("Address already in use")) throw error;
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -36,9 +41,8 @@ export async function startWorker(vars: Record<string, string> = {}): Promise<Se
   }
 }
 
-async function launchWorker(vars: Record<string, string>): Promise<Server> {
+async function launchWorker(vars: Record<string, string>, persist: string): Promise<Server> {
   const port = await freePort();
-  const persist = mkdtempSync(join(tmpdir(), "agentic-realtime-e2e-"));
   const child: ChildProcess = spawn(
     "npx",
     ["wrangler", "dev", "--config", "e2e/worker/wrangler.jsonc", "--ip", "127.0.0.1",
@@ -53,7 +57,11 @@ async function launchWorker(vars: Record<string, string>): Promise<Server> {
   const deadline = Date.now() + 90_000;
   for (;;) {
     if (child.exitCode !== null) throw new Error(`wrangler dev exited:\n${log}`);
-    if (Date.now() > deadline) throw new Error(`wrangler dev not ready:\n${log}`);
+    if (Date.now() > deadline) {
+      // A run that stays alive would hold its sockets against the retry.
+      child.kill("SIGTERM");
+      throw new Error(`wrangler dev not ready:\n${log}`);
+    }
     try {
       if ((await fetch(`${http}/health`)).ok) break;
     } catch {
@@ -61,6 +69,7 @@ async function launchWorker(vars: Record<string, string>): Promise<Server> {
     }
   }
   return {
+    persist,
     http,
     ws: `ws://127.0.0.1:${port}`,
     log: () => log,

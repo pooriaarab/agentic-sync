@@ -39,3 +39,5 @@ export {
 } from "./core/awareness.js";
 export type { AwarenessEntry } from "./core/awareness.js";
 export { restoreState } from "./core/history.js";
+export { AttributionLog, blameText, DEFAULT_MAX_RANGES } from "./core/attribution.js";
+export type { Attribution, AttributionRange, BlameSpan } from "./core/attribution.js";

@@ -1,3 +1,4 @@
+import type { Attribution } from "../core/attribution.js";
 import type { DocMeta, Grant, Principal, Realtime, Role, SnapshotInfo } from "../core/types.js";
 import { DOC_HEADER, GRANT_HEADER, type SyncRoom } from "./room.js";
 
@@ -51,5 +52,10 @@ export function createDurableObjectRealtime(
     updateRole: (docId: string, principalId: string, role: Role | null) =>
       room(docId).updateRole(principalId, role),
     roleFor: (docId: string, grant: Grant) => room(docId).roleFor(grant),
+    async attribution(docId: string, snapshot?: string) {
+      const path = snapshot === undefined ? "attribution" : `snapshots/${snapshot}/attribution`;
+      const response = await room(docId).fetch(`https://room.internal/${path}`);
+      return response.status === 200 ? ((await response.json()) as Attribution) : null;
+    },
   };
 }

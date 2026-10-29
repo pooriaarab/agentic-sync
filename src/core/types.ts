@@ -1,3 +1,5 @@
+import type { Attribution } from "./attribution.js";
+
 export const PRINCIPAL_KINDS = [
   "human",
   "agent_of_human",
@@ -86,6 +88,9 @@ export interface Realtime {
   updateRole(docId: string, principalId: string, role: Role | null): Promise<boolean>;
   // The principal's role after the cap, or null when it is revoked.
   roleFor(docId: string, grant: Grant): Promise<Role | null>;
+  // Who sent which content, now or as of a named snapshot. Null when the
+  // snapshot has no log.
+  attribution(docId: string, snapshot?: string): Promise<Attribution | null>;
 }
 
 // Role caps and bans count apart, so role caps never stop a revoke.
