@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "vitest";
+import { afterAll, afterEach, beforeAll, expect, test, vi } from "vitest";
 import { exportDocument } from "../src/sdk.js";
 import { SyncClient } from "../src/client/index.js";
 import { startWorker, type Server } from "./server.js";
@@ -6,6 +6,7 @@ import { startWorker, type Server } from "./server.js";
 const secret = "client-test-secret-with-at-least-32-bytes";
 let server: Server;
 const clients: SyncClient[] = [];
+afterEach(() => vi.restoreAllMocks());
 beforeAll(async () => { server = await startWorker({ SYNC_ADMIN_SECRET: secret }); }, 120_000);
 afterAll(async () => {
   await Promise.all(clients.map((c) => c.disconnect()));
@@ -44,6 +45,7 @@ test("client export and delete enforce owner access and keep case and authors", 
 });
 
 test("client host methods reject bad secrets and cap, revoke, and lift roles", async () => {
+  const requests = vi.spyOn(globalThis, "fetch");
   const owner = await connect("ClientRoles", "editor2");
   const editor = await connect("ClientRoles", "editor");
   await expect(owner.revokePrincipal("wrong", "person-1")).rejects.toThrow("UNAUTHORIZED");
@@ -59,4 +61,8 @@ test("client host methods reject bad secrets and cap, revoke, and lift roles", a
   await expect(connect("ClientRoles", "editor")).rejects.toThrow();
   await owner.setPrincipalRole(secret, "person-1", null);
   expect((await connect("ClientRoles", "editor")).doc.getText("body").toString()).toBe("allowed");
+  const adminUrls = requests.mock.calls.map(([input]) => new URL(String(input)))
+    .filter((url) => url.pathname.startsWith("/api/v1/admin/"));
+  expect(adminUrls.length).toBeGreaterThan(0);
+  expect(adminUrls.every((url) => url.search === "")).toBe(true);
 });

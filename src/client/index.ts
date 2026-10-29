@@ -305,12 +305,14 @@ export class SyncClient {
 
   // Derive the HTTP target from the document socket, including a host path
   // prefix and query credentials. Header credentials take precedence.
-  private httpTarget(): { target: sdk.Target; docId: string } {
+  private httpTarget(host = false): { target: sdk.Target; docId: string } {
     const url = new URL(this.options.url);
     const match = /^(.*)\/api\/v1\/docs\/([^/]+)\/ws$/.exec(url.pathname);
     if (!match) throw new Error("expected a document WebSocket URL");
     url.protocol = url.protocol === "wss:" ? "https:" : "http:";
     url.pathname = match[1] || "/";
+    // Host routes use only the explicit secret, never socket query credentials.
+    if (host) url.search = "";
     return { target: { server: url.toString(), headers: this.options.headers }, docId: decodeURIComponent(match[2]) };
   }
 
@@ -328,13 +330,13 @@ export class SyncClient {
 
   // Host backend only. Pass the secret for this call; never give it to agents.
   revokePrincipal(secret: string, principalId: string): Promise<{ closed: number }> {
-    const { target, docId } = this.httpTarget();
+    const { target, docId } = this.httpTarget(true);
     return sdk.revokePrincipal({ server: target.server, secret }, docId, principalId);
   }
 
   // A null role lifts a cap or revoke. Keep the host secret in your backend.
   setPrincipalRole(secret: string, principalId: string, role: Role | null) {
-    const { target, docId } = this.httpTarget();
+    const { target, docId } = this.httpTarget(true);
     return sdk.setPrincipalRole({ server: target.server, secret }, docId, principalId, role);
   }
 

@@ -11,7 +11,8 @@ connect and with what role.
 ## What exists now
 
 - `agentic-realtime/worker`: `createSyncWorker({ authorize })` and `SyncRoom`.
-- `agentic-realtime/client`: `SyncClient` (`connect`, `edit`, `peers`, `snapshot`, `restore`).
+- `agentic-realtime/client`: `SyncClient` (`connect`, `edit`, `peers`, `snapshot`, `restore`,
+  `exportDocument`, `deleteDocument`, `revokePrincipal`, `setPrincipalRole`).
 - `agentic-realtime/browser`: `openDocument` (IndexedDB, reconnect) and `peerLabel`.
 - `agentic-realtime`: protocol helpers, the `Realtime` interface, and the types.
 - `agentic-realtime` CLI and `agentic-realtime mcp`: `doc get|apply|snapshot|restore|presence|blame|export`.
