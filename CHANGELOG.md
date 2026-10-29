@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.4.3
+
+No breaking changes. Upgrading from 0.4.2 needs no code change.
+
+### Changed
+
+- The package depends on `agentic-identity` `^0.7.0`. It was `^0.6.0`. The principal kinds and the principal id rule do not change.
+
+### Fixed
+
+- `mcp --help`, `mcp -h`, `mcp --version`, and `mcp -V` print and exit 0. They never start the server. `agentic-realtime-mcp` also takes `-v` for the version.
+- `mcp` with an argument it does not know, and `agentic-realtime-mcp` with an unknown flag, exit 2 with a message. They never start the server.
+
+### Internal
+
+- Publish runs on one ref wait for each other. A running publish is not cancelled.
+
 ## 0.4.2
 
 Breaking for principal ids outside the `agentic-identity` rule. Read the first
