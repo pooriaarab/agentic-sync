@@ -355,8 +355,8 @@ How it is tested: one contract suite, `runStorageContract`, runs against the
 in-memory adapter and the Firestore adapter. By default, the Firestore run uses
 a fake of the REST calls in `src/firestore/fake.ts`. It accepts only the real
 URL shapes. It follows Firestore for byte order, query cursors, atomic commits,
-and the commit, string-value, and id size limits. It checks string values only,
-not field names or the document name, and it does not model the 10 MiB request cap.
+and the string-value and id size limits. It checks string values only, not field
+names or the document name, and it does not model the 10 MiB request cap.
 
 With `FIRESTORE_EMULATOR_HOST` set, the same suite runs against the real
 Firestore emulator. The emulator run passed on the Firestore emulator 1.19.8.
@@ -373,9 +373,11 @@ Limits of the adapter:
 - One value stays under 1 MB as JSON text. Bytes grow by a third as base64,
   so binary data stays under about 750 KB. A larger snapshot or authorship
   log, which the room allows, does not fit.
-- One `putAll` takes up to 500 entries. Firestore caps a commit at 10 MiB.
-- Update keys count up. Firestore warns that this can limit write throughput
-  on one hot document. A single-field index exemption for `value` saves index cost.
+- One `putAll` takes up to 500 entries. This is the adapter's own limit.
+  Firestore caps a commit at 10 MiB.
+- Update keys count up, and Firestore indexes `key`. Firestore warns that
+  ids or indexed values that rise in sequence can limit the write rate of a
+  collection. A single-field index exemption for `value` saves index cost.
 
 ## Limits
 

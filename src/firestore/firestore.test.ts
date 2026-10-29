@@ -109,3 +109,32 @@ it("ends a prefix range at the next string", () => {
   expect(prefixEnd("a\u{10FFFF}")).toBe("b");
   expect(prefixEnd("\u{10FFFF}")).toBeNull();
 });
+
+it("calls fetch without the options as `this`, as Workers need", async () => {
+  const fake = createFakeFirestore();
+  const strict = function (this: unknown, ...args: Parameters<typeof fetch>) {
+    if (this !== undefined && this !== globalThis) throw new TypeError("Illegal invocation");
+    return fake.fetch(...args);
+  } as typeof fetch;
+  const storage = createFirestoreStorage({ projectId: "p", docId: "d", fetch: strict });
+  await storage.put("a", 1);
+  expect(await storage.get("a")).toBe(1);
+});
+
+it("fails on a 200 reply that is not what Firestore sends", async () => {
+  const html = (async () => new Response("<html>ok</html>", { status: 200 })) as typeof fetch;
+  const storage = createFirestoreStorage({ projectId: "p", docId: "d", fetch: html });
+  await expect(storage.put("a", 1)).rejects.toBeInstanceOf(FirestoreError);
+  await expect(storage.get("a")).rejects.toBeInstanceOf(FirestoreError);
+  await expect(storage.list("")).rejects.toBeInstanceOf(FirestoreError);
+  await expect(storage.delete(["a"])).rejects.toBeInstanceOf(FirestoreError);
+  await expect(storage.deleteAll()).rejects.toBeInstanceOf(FirestoreError);
+});
+
+it("fails on a listed document with no fields", async () => {
+  const fake = createFakeFirestore();
+  const empty = (async () => new Response(JSON.stringify([{ document: { name: "x" } }]), { status: 200 })) as typeof fetch;
+  void fake;
+  const storage = createFirestoreStorage({ projectId: "p", docId: "d", fetch: empty });
+  await expect(storage.list("")).rejects.toThrow("a stored entry is damaged");
+});

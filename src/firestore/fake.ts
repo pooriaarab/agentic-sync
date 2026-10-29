@@ -1,6 +1,6 @@
 // A fake of the Firestore REST surface the adapter calls: batchGet, commit, and runQuery.
 // It follows Firestore: the URL shapes, UTF-8 byte order for strings, a commit that applies
-// all writes or none, a 500-write limit, a 1 MiB limit on string values (not field names or
+// all writes or none, a 1 MiB limit on string values (not field names or
 // the document name), a 1500-byte id limit, the startAt cursor, and a missing document
 // named in batchGet. It does not model the 10 MiB request cap.
 type Fields = Record<string, { stringValue?: string }>;
@@ -28,7 +28,6 @@ export function createFakeFirestore() {
 
     if (documents === ":commit") {
       const writes = body.writes as { update?: { name: string; fields: Fields }; delete?: string }[];
-      if (writes.length > 500) return failure(400, "INVALID_ARGUMENT");
       for (const write of writes) {
         const name = write.update?.name ?? write.delete ?? "";
         if (Buffer.byteLength(name.slice(name.lastIndexOf("/") + 1)) > 1500) return failure(400, "INVALID_ARGUMENT");

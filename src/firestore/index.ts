@@ -57,6 +57,10 @@ export function prefixEnd(prefix: string): string | null {
   return null;
 }
 
+const fail = (): never => {
+  throw new Error("a stored entry is damaged");
+};
+
 interface Write {
   update?: { name: string; fields: Record<string, { stringValue: string }> };
   delete?: string;
@@ -78,7 +82,8 @@ export function createFirestoreStorage(options: FirestoreStorageOptions): RoomSt
   async function call<T>(method: "POST", path: string, body?: unknown): Promise<T | null> {
     const token = typeof options.token === "function" ? await options.token() : options.token;
     // An operation such as ":commit" joins the documents path with no slash.
-    const response = await options.fetch(`${root}${path.startsWith(":") ? "" : "/"}${path}`, {
+    // A local call, so `this` is not the options. Workers and browsers refuse a fetch called as a method.
+    const response = await doFetch(`${root}${path.startsWith(":") ? "" : "/"}${path}`, {
       method,
       headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...(body === undefined ? {} : { "content-type": "application/json" }) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -97,6 +102,12 @@ export function createFirestoreStorage(options: FirestoreStorageOptions): RoomSt
     return parsed as T;
   }
 
+  const doFetch = options.fetch;
+  // A reply that is not the expected JSON array means a wrong host or proxy. Fail instead of reading it as empty.
+  const rows = <R>(reply: R[] | null): R[] => {
+    if (!Array.isArray(reply)) throw new FirestoreError(200, "BAD_RESPONSE");
+    return reply;
+  };
   const idOf = (key: string) => {
     assertText(key, "a key");
     return base64Url(key);
@@ -118,7 +129,10 @@ export function createFirestoreStorage(options: FirestoreStorageOptions): RoomSt
     if (new TextEncoder().encode(json).length > MAX_VALUE_BYTES) throw new Error("a stored value is over 1 MB, the Firestore limit");
     return { update: { name: nameOf(key), fields: { key: { stringValue: key }, value: { stringValue: json } } } };
   };
-  const commit = (writes: Write[]) => call("POST", ":commit", { writes });
+  const commit = async (writes: Write[]) => {
+    const reply = await call<{ writeResults?: unknown }>("POST", ":commit", { writes });
+    if (!Array.isArray(reply?.writeResults) || reply.writeResults.length !== writes.length) throw new FirestoreError(200, "BAD_RESPONSE");
+  };
 
   async function list<T>(prefix: string): Promise<Map<string, T>> {
     const found = new Map<string, T>();
@@ -136,8 +150,8 @@ export function createFirestoreStorage(options: FirestoreStorageOptions): RoomSt
         ...(after === undefined ? {} : { startAt: { before: false, values: [{ stringValue: after }] } }),
         limit: PAGE,
       };
-      const rows = (await call<Row[]>("POST", `${parent}:runQuery`, { structuredQuery })) ?? [];
-      const docs = rows.flatMap((row) => (row.document?.fields ? [row.document.fields] : []));
+      const reply = rows(await call<Row[]>("POST", `${parent}:runQuery`, { structuredQuery }));
+      const docs = reply.flatMap((row) => (row.document === undefined ? [] : [row.document.fields ?? fail()]));
       for (const fields of docs) {
         const key = fields.key?.stringValue;
         if (key === undefined) throw damaged();
@@ -151,11 +165,13 @@ export function createFirestoreStorage(options: FirestoreStorageOptions): RoomSt
   return {
     async get<T>(key: string) {
       // batchGet names a missing document. A bare 404 could also mean a wrong database, and must not read as "missing".
-      const rows = await call<{ found?: { fields?: Record<string, { stringValue?: string }> }; missing?: string }[]>("POST", ":batchGet", {
-        documents: [nameOf(key)],
-        mask: { fieldPaths: ["key", "value"] },
-      });
-      const row = rows?.[0];
+      const reply = rows(
+        await call<{ found?: { fields?: Record<string, { stringValue?: string }> }; missing?: string }[]>("POST", ":batchGet", {
+          documents: [nameOf(key)],
+          mask: { fieldPaths: ["key", "value"] },
+        }),
+      );
+      const row = reply.length === 1 ? reply[0] : undefined;
       if (row?.missing === nameOf(key)) return undefined;
       if (row?.found === undefined) throw damaged();
       return read(row.found.fields, key) as T;
@@ -174,8 +190,8 @@ export function createFirestoreStorage(options: FirestoreStorageOptions): RoomSt
       const writes = unique.map((key): Write => ({ delete: nameOf(key) }));
       let existed = 0;
       for (let i = 0; i < writes.length; i += BATCH_GET) {
-        const found = await call<{ found?: unknown }[]>("POST", ":batchGet", { documents: writes.slice(i, i + BATCH_GET).map((w) => w.delete), mask: { fieldPaths: ["key"] } });
-        existed += (found ?? []).filter((row) => row.found !== undefined).length;
+        const found = rows(await call<{ found?: unknown }[]>("POST", ":batchGet", { documents: writes.slice(i, i + BATCH_GET).map((w) => w.delete), mask: { fieldPaths: ["key"] } }));
+        existed += found.filter((row) => row.found !== undefined).length;
       }
       for (let i = 0; i < writes.length; i += COMMIT_WRITES) await commit(writes.slice(i, i + COMMIT_WRITES));
       return existed;
@@ -183,11 +199,12 @@ export function createFirestoreStorage(options: FirestoreStorageOptions): RoomSt
     async deleteAll() {
       // Page over document names only, so a damaged entry cannot block the erase.
       for (;;) {
-        const rows =
-          (await call<Row[]>("POST", `${parent}:runQuery`, {
+        const reply = rows(
+          await call<Row[]>("POST", `${parent}:runQuery`, {
             structuredQuery: { from: [{ collectionId: "kv" }], select: { fields: [{ fieldPath: "__name__" }] }, limit: COMMIT_WRITES },
-          })) ?? [];
-        const writes = rows.flatMap((row) => (row.document ? [{ delete: row.document.name }] : []));
+          }),
+        );
+        const writes = reply.flatMap((row) => (row.document ? [{ delete: row.document.name }] : []));
         if (writes.length === 0) return;
         await commit(writes);
       }
