@@ -1,6 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
 import * as Y from "yjs";
 import { AttributionLog, DEFAULT_MAX_RANGES, LARGEST_MAX_RANGES } from "../core/attribution.js";
+import { toBase64 } from "../core/base64.js";
+import { readRoots } from "../core/history.js";
 import {
   AwarenessRelay,
   AwarenessViolation,
@@ -54,6 +56,8 @@ const MAX_COMPACT_EVERY = 128;
 const FROM_STORAGE = "storage";
 // A new socket of the same principal took over this socket's client id.
 const CLOSE_REPLACED = 4001;
+// The document was deleted.
+const CLOSE_ERASED = 4004;
 // The host revoked this socket's principal.
 const CLOSE_REVOKED = 4003;
 const PRESENCE_FULL = "presence is full";
@@ -121,7 +125,7 @@ export interface RoomEnv {
 // hibernation. Updates append to a log. Every N updates the log folds
 // into one base snapshot.
 export class SyncRoom extends DurableObject<RoomEnv> {
-  private readonly doc = new Y.Doc();
+  private doc = new Y.Doc();
   private readonly relay = new AwarenessRelay();
   private readonly authors = new Map<string, Principal>();
   private readonly compactEvery: number;
@@ -151,14 +155,16 @@ export class SyncRoom extends DurableObject<RoomEnv> {
       (Number.isInteger(reauthSeconds)
         ? Math.min(MAX_REAUTH_SECONDS, Math.max(1, reauthSeconds))
         : DEFAULT_REAUTH_SECONDS) * 1000;
-    this.doc.on("update", (update: Uint8Array, origin: unknown) =>
-      this.onUpdate(update, origin),
-    );
+    this.watch();
     for (const ws of ctx.getWebSockets()) {
       const attachment = ws.deserializeAttachment() as Attachment;
       this.relay.claim(ownerOf(attachment), attachment.awarenessIds);
     }
     ctx.blockConcurrencyWhile(() => this.load());
+  }
+
+  private watch(): void {
+    this.doc.on("update", (update: Uint8Array, origin: unknown) => this.onUpdate(update, origin));
   }
 
   // A host overrides this to turn on re-authorization. See createSyncRoom.
@@ -284,6 +290,7 @@ export class SyncRoom extends DurableObject<RoomEnv> {
   async fetch(request: Request): Promise<Response> {
     const { pathname } = new URL(request.url);
     if (pathname === "/meta") return Response.json(this.meta());
+    if (pathname === "/export") return this.exportHistory();
     if (pathname === "/attribution") return Response.json(this.attribution.labeled());
     const saved = /^\/snapshots\/([^/]+)\/attribution$/.exec(pathname);
     if (saved !== null) {
@@ -412,6 +419,78 @@ export class SyncRoom extends DurableObject<RoomEnv> {
     } catch {
       // The socket is already closed.
     }
+  }
+
+  // Deletes every stored trace of the document and starts it empty: the
+  // updates, the base, the snapshots, the attribution logs, the caps, and the
+  // alarm. Open sockets close first. Returns how many.
+  async erase(): Promise<{ sockets: number }> {
+    const open = this.ctx.getWebSockets();
+    for (const ws of open) this.evict(ws, CLOSE_ERASED, "document deleted");
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
+    this.doc.destroy();
+    this.doc = new Y.Doc();
+    this.watch();
+    this.authors.clear();
+    this.caps.clear();
+    this.pending = [];
+    this.seq = 0;
+    this.compactions = 0;
+    this.bytes = 0;
+    this.docId = undefined;
+    this.attribution = new AttributionLog(this.maxRanges);
+    return { sockets: open.length };
+  }
+
+  // Streams all that the room stores as lines of JSON, one record each. A
+  // write that lands during the stream may or may not be in it.
+  private exportHistory(): Response {
+    const room = this;
+    const storage = this.ctx.storage;
+    const label = (author: Principal) => ({ ...author, machine: isMachineKind(author.kind) });
+    const encoder = new TextEncoder();
+    const line = (record: object) => encoder.encode(`${JSON.stringify(record)}\n`);
+    async function* records() {
+      const base = await storage.get<BaseRecord>("base");
+      yield line({
+        type: "meta",
+        format: "agentic-realtime-export",
+        version: 1,
+        exportedAt: Date.now(),
+        compactions: room.compactions,
+        base: base === undefined ? null : { at: base.at, compactions: base.compactions },
+      });
+      yield line({ type: "state", base64: toBase64(Y.encodeStateAsUpdate(room.doc)) });
+      yield line({ type: "roots", roots: readRoots(room.doc) });
+      yield line({ type: "authors", authors: room.meta().contributors });
+      yield line({ type: "attribution", ...room.attribution.labeled() });
+      for (const [key, update] of await storage.list<UpdateRecord>({ prefix: "u:" })) {
+        yield line({ type: "update", seq: key.slice(2), at: update.at, author: label(update.author), base64: toBase64(update.update) });
+      }
+      for (const [key, snapshot] of await storage.list<SnapshotRecord>({ prefix: "s:" })) {
+        const name = key.slice(2);
+        const [state, log] = await Promise.all([storage.get<Uint8Array>(`d:${name}`), storage.get(`a:${name}`)]);
+        yield line({
+          type: "snapshot",
+          name,
+          at: snapshot.at,
+          bytes: snapshot.bytes,
+          author: label(snapshot.author),
+          base64: state === undefined ? null : toBase64(state),
+          attribution: log === undefined ? null : room.readLog(log).labeled(),
+        });
+      }
+    }
+    const iterator = records();
+    const body = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        const next = await iterator.next();
+        if (next.done) controller.close();
+        else controller.enqueue(next.value);
+      },
+    });
+    return new Response(body, { headers: { "content-type": "application/x-ndjson" } });
   }
 
   // The role after the host's cap, or null when the principal is revoked.

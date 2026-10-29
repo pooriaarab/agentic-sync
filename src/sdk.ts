@@ -131,6 +131,50 @@ export async function blame(target: Target, docId: string, root: string, snapsho
   });
 }
 
+// One record of an export, such as `{ type: "state", base64 }`. See the README.
+// The fields depend on the type.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ExportRecord = { type: string; [field: string]: any };
+
+async function call(server: string, path: string, secret: string | undefined, init: RequestInit = {}): Promise<Response> {
+  const url = new URL(server);
+  url.pathname = `${url.pathname.replace(/\/$/, "")}${path}`;
+  const headers: Record<string, string> = {};
+  if (secret !== undefined) headers.authorization = `Bearer ${secret}`;
+  if (init.body !== undefined) headers["content-type"] = "application/json";
+  const response = await fetch(url, { ...init, headers });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { error?: { code: string } };
+    throw new Error(`the server refused the request: ${body.error?.code ?? response.status}`);
+  }
+  return response;
+}
+
+const lines = async (response: Response): Promise<ExportRecord[]> =>
+  (await response.text()).split("\n").filter(Boolean).map((line) => JSON.parse(line) as ExportRecord);
+
+const docPath = (docId: string) => `/api/v1/docs/${encodeURIComponent(docId)}`;
+const hostPath = (docId: string) => `/api/v1/admin/docs/${encodeURIComponent(docId)}`;
+const confirmation = (docId: string): RequestInit => ({ method: "DELETE", body: JSON.stringify({ confirm: docId }) });
+
+// Everything the room stores for a document, as records. Owners only.
+export const exportDocument = async (target: Target, docId: string) =>
+  lines(await call(target.server, `${docPath(docId)}/export`, target.token));
+
+// Deletes all data of a document and closes its sockets. Owners only. This cannot be undone.
+export const deleteDocument = async (target: Target, docId: string) =>
+  (await (await call(target.server, docPath(docId), target.token, confirmation(docId))).json()) as { deleted: true; sockets: number };
+
+// The same two calls for the host, with the host secret. Keep it out of agents.
+export const exportDocumentAsHost = async (host: AdminTarget, docId: string) =>
+  lines(await call(host.server, `${hostPath(docId)}/export`, host.secret));
+
+export const deleteDocumentAsHost = async (host: AdminTarget, docId: string) =>
+  (await (await call(host.server, hostPath(docId), host.secret, confirmation(docId))).json()) as {
+    deleted: true;
+    sockets: number;
+  };
+
 // Joins, waits a moment for the others to announce themselves, and lists them.
 export const listPeers = (target: Target, docId: string, waitMs = 1000): Promise<Peer[]> =>
   withDoc(target, docId, async (client) => {

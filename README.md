@@ -42,6 +42,8 @@ npm install agentic-realtime
 - Who wrote what. A log keeps which principal sent which content, also after
   compaction and inside each snapshot. `blame` shows it as runs of text, with
   agents marked as machine-made.
+- Delete and export. The owner or the host can export the full stored history
+  of a document, and delete all of its data.
 - Live revocation. The host can revoke a principal or cap its role while it is
   connected. A timer asks the host again who each socket is.
 - Data residency. Set `SYNC_JURISDICTION=eu` to pin documents to the EU.
@@ -82,6 +84,9 @@ The default Worker refuses every document. To see a working host, run
 | `GET /api/v1/docs/:id/snapshots/:name` | Read a snapshot as a Yjs update. |
 | `GET /api/v1/docs/:id/attribution` | Read who sent which content. Any role may read it. |
 | `GET /api/v1/docs/:id/snapshots/:name/attribution` | The same log, as of that snapshot. |
+| `GET /api/v1/docs/:id/export` | Stream everything stored for the document as JSON lines. Owners only. |
+| `DELETE /api/v1/docs/:id` | Delete all data of the document. Owners only. The body is `{"confirm": "<id>"}`. |
+| `GET /api/v1/admin/docs/:id/export`, `DELETE /api/v1/admin/docs/:id` | The same two calls for the host, with the host secret. |
 | `GET /health` | Check that the Worker runs. |
 
 A document id matches `[A-Za-z0-9_-]{1,128}`. Ids are case sensitive.
@@ -191,6 +196,39 @@ rich-text, map, or array root and exits with 1, so it never deletes a document.
 the server environment. A tool call never carries a credential. `doc_apply`
 returns an error for a root that is not text. The same operations are in `agentic-realtime/sdk`.
 
+## Export and delete a document
+
+An owner, or the host with the host secret, can take a copy of a document and
+delete it.
+
+```ts
+import { deleteDocument, exportDocument } from "agentic-realtime/sdk";
+
+const records = await exportDocument({ server, token: ownerToken }, "notes");
+await deleteDocument({ server, token: ownerToken }, "notes"); // cannot be undone
+```
+
+`exportDocumentAsHost` and `deleteDocumentAsHost` take `{ server, secret }` instead. An
+export is JSON lines, one record each, sent as the room reads its storage:
+
+| `type` | Holds |
+| --- | --- |
+| `meta` | `format` (`agentic-realtime-export`), `version`, `exportedAt`, `compactions`, and the base. |
+| `state` | `base64`: the whole document as one Yjs update. |
+| `roots` | Each root type as plain JSON. |
+| `authors` | Everyone who wrote, with a `machine` label. |
+| `attribution` | The log of who sent which content. |
+| `update` | One update that compaction has not folded yet: `seq`, `at`, `author`, `base64`. |
+| `snapshot` | A named snapshot: `name`, `at`, `author`, `base64`, and its `attribution`. |
+
+A delete closes every socket with code 4004. It removes the updates, the base, the
+snapshots, the attribution logs, the caps and bans, and the timer. The document id
+then starts empty, and a new writer starts a new history. A delete needs `confirm`
+with the document id in its body, so a stray call does nothing.
+
+The package has no CLI or MCP command for either call, as for a revoke. An agent
+must not delete a document, and it must not hold the host secret.
+
 ## See who wrote what
 
 Yjs names each piece of content by a client id and a clock. The room keeps a
@@ -293,6 +331,16 @@ TypeScript with no Cloudflare code.
 - The author of a range is the principal that sent the update. A principal can
   send a range of ids that nobody has used yet. The first range recorded for
   an id wins, so a later sender cannot take over text that is already there.
+- A delete removes the room's storage. It cannot remove copies that other
+  parties hold: an export, a snapshot a client downloaded, the offline copy in a
+  browser, your backups, and your host's logs. A client with an offline copy
+  writes it back when it reconnects, so make `authorize` refuse a deleted
+  document, or revoke its principals. Record a delete in your own audit log.
+- An export is not a point in time. A write during the stream may or may not be in
+  it. Compaction has folded older updates into the state, so an export lists only
+  the updates since the last compaction. The snapshots and the attribution log
+  keep who wrote what. An export holds the content in clear text, so treat the file
+  as personal data.
 - Revocation by the host call is immediate. Revocation by the timer takes up to
   one interval. Without `createSyncRoom`, there is no timer. A room with open
   sockets from before you deployed `createSyncRoom` starts its timer at the next
