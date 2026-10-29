@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.4.2
+
+Breaking for principal ids outside the `agentic-identity` rule. Read the first
+item under Changed before you upgrade from 0.4.1. The other changes need no code
+change.
 
 ### Changed
 
@@ -20,6 +24,13 @@
   open until it reconnects.
 - `PRINCIPAL_KINDS` and `PrincipalKind` come from `agentic-identity`. The names
   and types do not change.
+- The principal id check comes from `agentic-identity` too. A grant, the admin
+  routes, and `setCap` all use the same rule.
+
+### Removed
+
+- The package's own copy of the principal kinds and of the principal id check.
+  The `MAX_PRINCIPAL_ID_LENGTH` constant is gone. The package did not export it.
 
 ## 0.4.1
 

@@ -7,7 +7,7 @@
 
 Live edits for people and agents on one document, with offline support.
 
-> Status: 0.4.1 preview. Most features below have an end-to-end test.
+> Status: 0.4.2 preview. Most features below have an end-to-end test.
 > Hibernation, the no-outbound-calls rule, and EU placement do not.
 
 ## Install
