@@ -10,7 +10,7 @@ No breaking changes. Upgrading from 0.4.2 needs no code change.
 
 ### Fixed
 
-- `mcp --help`, `mcp -h`, `mcp --version`, and `mcp -V` print and exit 0. They never start the server. `agentic-realtime-mcp` also takes `-v` for the version.
+- `mcp --help`, `mcp -h`, `mcp --version`, and `mcp -V` print and exit 0. They never start the server. `mcp -v` and `agentic-realtime-mcp -v` also print the version.
 - `mcp` with an argument it does not know, and `agentic-realtime-mcp` with an unknown flag, exit 2 with a message. They never start the server.
 
 ### Internal
