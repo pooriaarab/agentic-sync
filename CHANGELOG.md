@@ -28,12 +28,16 @@ space.
 ### Added
 
 - Presence can carry an away state: `active`, `idle`, or `hidden`. Pass the new
-  `away: { idleAfterSeconds }` option. Every `Peer` has an `away` field that is
-  `unknown` when the peer reports none. New exports: `AwayTracker`,
-  `AwayState`, `isAwayState`, `readAwayState`, `AWAY_STATES`, `watchPageAway`
-  (browser), and `stopWatching` on the result of `openDocument`.
-- Peer colors: `peerColor`, `safePeerColor`, `contrastRatio`, `isHexColor`, and
-  the contrast constants are exported. The default color has 3:1 on a white
+  `away: { idleAfterSeconds }` option with `presence`. Call `client.markActive()`
+  on input and `client.setHidden(true | false)` when a page hides or shows.
+  The `client.away` getter and the optional `away` field of `Presence` hold the
+  state. The server drops an invalid `away` value. Every `Peer` has an `away`
+  field that is `unknown` when the peer reports none. New exports: `AwayTracker`,
+  `AwayState`, `AwayOptions`, `isAwayState`, `readAwayState`, `AWAY_STATES`,
+  `watchPageAway` and `PageLike` (browser), and `stopWatching` on the result of
+  `openDocument`.
+- Peer colors: `peerColor`, `safePeerColor`, `contrastRatio`, `isHexColor`, the
+  `ColorMode` type, and the contrast constants are exported. The default color has 3:1 on a white
   page and on a `#121212` page. `peerColor` also gives 4.5:1 text colors for one
   page.
 - Name helpers: `isSafePeerName`, `assertSafePeerName`, `displayPeerName`,
