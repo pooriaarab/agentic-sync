@@ -78,9 +78,15 @@ const host = { server: "http://127.0.0.1:8787", secret: process.env.SYNC_ADMIN_S
 await revokePrincipal(host, "notes", "bot-1");
 ```
 
-The room also asks `reauthorize` every minute. A principal can hold several tokens, so
-it keeps the widest role of the tokens that may open the document. It loses access
-when the table lists none for that document.
+To take a token away, delete it from `HOST_TOKENS`. In local dev, restart `npm run example`. In
+production, run `wrangler secret put HOST_TOKENS` and deploy. A restart or a deploy also
+drops the open sockets, so the person has to sign in again, and the old token fails.
+
+The room also asks `reauthorize` every minute, and this matters when you read your
+table from a database that changes while the room runs. In this example the table comes
+from a variable, so it changes only with a restart or a deploy. A principal can hold
+several tokens, so it keeps the widest role of the tokens that may open the document.
+It loses access when the table lists none for that document.
 
 ## Limits
 

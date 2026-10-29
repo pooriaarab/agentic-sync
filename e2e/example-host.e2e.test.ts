@@ -1,13 +1,24 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { SyncClient } from "../src/client/index.js";
 import { revokePrincipal } from "../src/sdk.js";
 import { startWorker, until, type Server } from "./server.js";
 
 // The steps of examples/host/README.md, run against the real example Worker.
-const EXAMPLE = "examples/host/wrangler.jsonc";
+// Each test Worker runs from a copy in a temp folder, so no test reads or writes the
+// .dev.vars that a reader made in examples/host. The copy points its alias at this build.
+function exampleCopy(devVars?: string): string {
+  const dir = mkdtempSync(join(tmpdir(), "agentic-realtime-example-"));
+  copyFileSync("examples/host/worker.ts", join(dir, "worker.ts"));
+  const config = readFileSync("examples/host/wrangler.jsonc", "utf8").replace("../../dist/worker.js", resolve("dist/worker.js"));
+  writeFileSync(join(dir, "wrangler.jsonc"), config);
+  if (devVars !== undefined) writeFileSync(join(dir, ".dev.vars"), devVars);
+  return join(dir, "wrangler.jsonc");
+}
 const SECRET = randomBytes(32).toString("hex");
 const [OWNER, VIEWER, AGENT] = [1, 2, 3].map(() => randomBytes(32).toString("hex"));
 const TOKENS = JSON.stringify({
@@ -21,16 +32,9 @@ let server: Server;
 beforeAll(async () => {
   if (!existsSync("dist/cli.js")) throw new Error("run npm run build first");
   // The README says to put the secrets in .dev.vars, so this does the same.
-  // A person who ran the README steps has their own file there, so put it back.
-  const devVars = "examples/host/.dev.vars";
-  const own = existsSync(devVars) ? readFileSync(devVars) : undefined;
-  writeFileSync(devVars, `HOST_TOKENS='${TOKENS}'\nSYNC_ADMIN_SECRET='${SECRET}'\n`);
-  try {
-    server = await startWorker({}, undefined, EXAMPLE);
-  } finally {
-    if (own === undefined) rmSync(devVars, { force: true });
-    else writeFileSync(devVars, own);
-  }
+  // The README says to put the secrets in .dev.vars, so this does the same.
+  const devVars = `HOST_TOKENS='${TOKENS}'\nSYNC_ADMIN_SECRET='${SECRET}'\n`;
+  server = await startWorker({}, undefined, exampleCopy(devVars));
 }, 120_000);
 
 afterAll(async () => {
@@ -85,7 +89,7 @@ describe("the example host, as its README runs it", () => {
       [view]: { principal: { id: "ana", kind: "human" }, role: "viewer" },
       [own]: { principal: { id: "ana", kind: "human" }, role: "owner" },
     });
-    const timed = await startWorker({ HOST_TOKENS: table, SYNC_REAUTH_INTERVAL_SECONDS: "1" }, undefined, EXAMPLE);
+    const timed = await startWorker({ HOST_TOKENS: table, SYNC_REAUTH_INTERVAL_SECONDS: "1" }, undefined, exampleCopy());
     try {
       const client = await SyncClient.connect({
         url: `${timed.ws}/api/v1/docs/timer/ws`,
@@ -108,9 +112,10 @@ describe("the example host, as its README runs it", () => {
       { vars: { HOST_TOKENS: JSON.stringify({ short: grant }) }, why: /at least 32 bytes/ },
       { vars: { HOST_TOKENS: `{"${token}": owner}` }, why: /not valid JSON/ },
       { vars: { HOST_TOKENS: JSON.stringify({ [token]: { ...grant, docs: "notes" } }) }, why: /docs in HOST_TOKENS/ },
+      { vars: { HOST_TOKENS: JSON.stringify({ [`${token} with a space`]: grant }) }, why: /must not contain whitespace/ },
     ];
     for (const { vars, why } of cases) {
-      const bare = await startWorker(vars, undefined, EXAMPLE);
+      const bare = await startWorker(vars, undefined, exampleCopy());
       try {
         const response = await fetch(`${bare.http}/api/v1/docs/notes`, { headers: { authorization: `Bearer ${AGENT}` } });
         expect(response.status).toBe(500);

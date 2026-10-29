@@ -39,6 +39,8 @@ async function entriesOf(env: Record<string, unknown>): Promise<Map<string, Entr
   }
   for (const [token, value] of Object.entries(table as Record<string, Entry["grant"] & { docs?: unknown }>)) {
     if (new TextEncoder().encode(token).length < 32) throw new Error("every token in HOST_TOKENS must be at least 32 bytes");
+    // The header reader stops at a space, so such a token could never match.
+    if (/\s/.test(token)) throw new Error("a token in HOST_TOKENS must not contain whitespace");
     const { docs, ...grant } = value;
     if (docs !== undefined && (!Array.isArray(docs) || docs.some((doc) => typeof doc !== "string"))) {
       throw new Error("docs in HOST_TOKENS must be a list of document ids");
