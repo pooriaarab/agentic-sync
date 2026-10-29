@@ -48,8 +48,17 @@ async function launchWorker(vars: Record<string, string>, persist: string): Prom
     ["wrangler", "dev", "--config", "e2e/worker/wrangler.jsonc", "--ip", "127.0.0.1",
       "--port", String(port), "--persist-to", persist,
       ...Object.entries(vars).flatMap(([key, value]) => ["--var", `${key}:${value}`])],
-    { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, WRANGLER_SEND_METRICS: "false" } },
+    // Its own process group, so one kill ends npx, wrangler, and workerd. A
+    // lone kill of npx leaves workerd running, and it holds memory and sockets.
+    { stdio: ["ignore", "pipe", "pipe"], detached: true, env: { ...process.env, WRANGLER_SEND_METRICS: "false" } },
   );
+  const killGroup = () => {
+    try {
+      process.kill(-child.pid!, "SIGTERM");
+    } catch {
+      // The group is already gone.
+    }
+  };
   let log = "";
   child.stdout?.on("data", (chunk) => (log += chunk));
   child.stderr?.on("data", (chunk) => (log += chunk));
@@ -59,7 +68,7 @@ async function launchWorker(vars: Record<string, string>, persist: string): Prom
     if (child.exitCode !== null) throw new Error(`wrangler dev exited:\n${log}`);
     if (Date.now() > deadline) {
       // A run that stays alive would hold its sockets against the retry.
-      child.kill("SIGTERM");
+      killGroup();
       throw new Error(`wrangler dev not ready:\n${log}`);
     }
     try {
@@ -76,7 +85,7 @@ async function launchWorker(vars: Record<string, string>, persist: string): Prom
     stop: () =>
       new Promise((resolve) => {
         child.once("exit", () => resolve());
-        child.kill("SIGTERM");
+        killGroup();
       }),
   };
 }
