@@ -1,10 +1,10 @@
-# agentic-sync
+# agentic-realtime
 
 Live edits for people and agents on one document, with offline support.
 
 Keywords: yjs,crdt,realtime,collaboration,presence,offline,agents,durable-objects,cloudflare,mcp.
 
-- Worker: createSyncWorker({ authorize }) from "agentic-sync/worker".
+- Worker: createSyncWorker({ authorize }) from "agentic-realtime/worker".
 - Protocol: connect a Yjs client to /api/v1/docs/:id/ws.
 
 ## Docs

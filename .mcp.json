@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "agentic-sync": {
+    "agentic-realtime": {
       "command": "npx",
-      "args": ["-y", "agentic-sync", "mcp"]
+      "args": ["-y", "agentic-realtime", "mcp"]
     }
   }
 }

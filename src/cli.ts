@@ -53,9 +53,9 @@ export function parseArgs(argv: string[]): CliRequest {
   return { command: "doc", sub, flags };
 }
 
-const HELP = `agentic-sync ${VERSION}
-Usage: agentic-sync doc <get|apply|snapshot|restore|presence> --doc <id> [flags]
-       agentic-sync mcp
+const HELP = `agentic-realtime ${VERSION}
+Usage: agentic-realtime doc <get|apply|snapshot|restore|presence> --doc <id> [flags]
+       agentic-realtime mcp
 
 Set AGENTIC_SYNC_URL and AGENTIC_SYNC_TOKEN. The token stays off the command line.
 
@@ -81,7 +81,7 @@ export async function runCli(
     }
     const server = flags.server ?? env.AGENTIC_SYNC_URL;
     if (!server) throw new UsageError("set AGENTIC_SYNC_URL or pass --server");
-    const target: sdk.Target = { server, token: env.AGENTIC_SYNC_TOKEN, name: flags.name ?? "agentic-sync cli" };
+    const target: sdk.Target = { server, token: env.AGENTIC_SYNC_TOKEN, name: flags.name ?? "agentic-realtime cli" };
     const doc = flags.doc;
     let result: unknown;
     switch (sub) {
@@ -111,7 +111,7 @@ export async function runCli(
     return 0;
   } catch (error) {
     const usage = error instanceof UsageError;
-    console.error(`${(error as Error).message}${usage ? '\nRun "agentic-sync --help" for usage.' : ""}`);
+    console.error(`${(error as Error).message}${usage ? '\nRun "agentic-realtime --help" for usage.' : ""}`);
     return usage ? 2 : 1;
   }
 }

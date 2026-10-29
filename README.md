@@ -1,9 +1,9 @@
-# agentic-sync
+# agentic-realtime
 
-[![npm version](https://img.shields.io/npm/v/agentic-sync)](https://www.npmjs.com/package/agentic-sync)
+[![npm version](https://img.shields.io/npm/v/agentic-realtime)](https://www.npmjs.com/package/agentic-realtime)
 [![MIT license](https://img.shields.io/badge/license-MIT-blue)](https://opensource.org/license/mit)
 
-[Package](https://www.npmjs.com/package/agentic-sync) · [Source](https://github.com/pooriaarab/agentic-sync) · [Support](https://github.com/pooriaarab/agentic-sync/issues)
+[Package](https://www.npmjs.com/package/agentic-realtime) · [Source](https://github.com/pooriaarab/agentic-sync) · [Support](https://github.com/pooriaarab/agentic-sync/issues)
 
 Live edits for people and agents on one document, with offline support.
 
@@ -13,7 +13,7 @@ Live edits for people and agents on one document, with offline support.
 ## Install
 
 ```sh
-npm install agentic-sync
+npm install agentic-realtime
 ```
 
 ## Features
@@ -25,8 +25,8 @@ npm install agentic-sync
   A client cannot change either. The first socket that announces a client id
   owns it. Only that socket, or a new socket of the same principal, can
   update or remove it.
-- A headless Node client (`agentic-sync/client`) so an agent can join a document.
-- Browser offline support (`agentic-sync/browser`): `openDocument` keeps an
+- A headless Node client (`agentic-realtime/client`) so an agent can join a document.
+- Browser offline support (`agentic-realtime/browser`): `openDocument` keeps an
   IndexedDB copy, reconnects with backoff, and merges offline edits. `onPeers`
   and `peerLabel` help any UI show peers, with agents marked as machine-made.
 - Version history: `client.snapshot(name)`, `snapshots()`, and `restore(name)`.
@@ -48,8 +48,8 @@ You own sign-in. Pass an `authorize` hook. It returns a grant, or `null` to
 refuse.
 
 ```ts
-import { createSyncWorker } from "agentic-sync/worker";
-export { SyncRoom } from "agentic-sync/worker";
+import { createSyncWorker } from "agentic-realtime/worker";
+export { SyncRoom } from "agentic-realtime/worker";
 
 export default createSyncWorker({
   authorize: async (request, docId) => {
@@ -82,7 +82,7 @@ An agent kind is one of `agent_of_human`, `agent_of_agent`, `agent`, or
 ## Join a document from Node
 
 ```ts
-import { SyncClient } from "agentic-sync/client";
+import { SyncClient } from "agentic-realtime/client";
 
 const client = await SyncClient.connect({
   url: "wss://sync.example.com/api/v1/docs/notes/ws",
@@ -109,11 +109,11 @@ The client needs Node 22 or later. It reconnects only if you pass `reconnect: {}
 ```sh
 export AGENTIC_SYNC_URL=https://sync.example.com
 export AGENTIC_SYNC_TOKEN=...   # sent as a bearer token
-agentic-sync doc apply --doc notes --root body --text "Hello"
-agentic-sync doc get --doc notes
-agentic-sync doc snapshot --doc notes --name before-review
-agentic-sync doc restore --doc notes --name before-review
-agentic-sync doc presence --doc notes
+agentic-realtime doc apply --doc notes --root body --text "Hello"
+agentic-realtime doc get --doc notes
+agentic-realtime doc snapshot --doc notes --name before-review
+agentic-realtime doc restore --doc notes --name before-review
+agentic-realtime doc presence --doc notes
 ```
 
 Each command joins the document, does one job, prints JSON, and leaves. `doc
@@ -125,16 +125,16 @@ rich-text, map, or array root and exits with 1, so it never deletes a document.
 
 ## Use the MCP server
 
-`agentic-sync mcp` serves these tools over stdio: `doc_get`, `doc_apply`,
+`agentic-realtime mcp` serves these tools over stdio: `doc_get`, `doc_apply`,
 `doc_snapshot`, `doc_snapshots`, `doc_restore`, and `doc_presence`. Set
 `AGENTIC_SYNC_URL`, `AGENTIC_SYNC_TOKEN`, and optionally `AGENTIC_SYNC_NAME` in
 the server environment. A tool call never carries a credential. `doc_apply`
-returns an error for a root that is not text. The same operations are in `agentic-sync/sdk`.
+returns an error for a root that is not text. The same operations are in `agentic-realtime/sdk`.
 
 ## Work offline in the browser
 
 ```ts
-import { openDocument, peerLabel } from "agentic-sync/browser";
+import { openDocument, peerLabel } from "agentic-realtime/browser";
 
 const { client } = await openDocument({
   url: "wss://sync.example.com/api/v1/docs/notes/ws?ticket=...",
@@ -162,7 +162,7 @@ The Worker talks to the server through the `Realtime` interface. It has five
 methods: `connect`, `meta`, `createSnapshot`, `listSnapshots`, and
 `getSnapshot`. The Cloudflare adapter implements it with Durable Objects.
 Another server, such as a Node Yjs server, could implement it. The wire
-protocol helpers in `agentic-sync` (`readMessage`, `AwarenessRelay`) are plain
+protocol helpers in `agentic-realtime` (`readMessage`, `AwarenessRelay`) are plain
 TypeScript with no Cloudflare code.
 
 ## Limits
