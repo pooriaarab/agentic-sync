@@ -425,7 +425,7 @@ Each entry point lists its exports below. A name marked (type) exists only at co
 | `assertGrant(value)` | Checks a value from `authorize` and returns it as a `Grant`. Throws when it is malformed. |
 | `MESSAGE_SYNC`, `MESSAGE_AWARENESS`, `MESSAGE_AUTH`, `MESSAGE_QUERY_AWARENESS` | The message types 0 to 3 of the wire protocol. |
 | `syncStep1Message`, `updateMessage`, `awarenessMessage`, `permissionDeniedMessage` | Build one wire message as bytes. |
-| `readMessage`, `Incoming` (type) | Read one client message against a `Y.Doc`. It returns the reply, a denial, an awareness update, or a query. A writer's update is applied to the doc. It throws on a malformed message. |
+| `readMessage`, `Incoming` (type) | Read one client message against a `Y.Doc`. It returns the reply, a denial, an awareness update, or a query. It applies a writer's update to the doc, unless `refuse` names a reason. It throws on a malformed message. |
 | `AwarenessRelay`, `AwarenessEntry` (type) | Keeps the presence state of a document and relays changes. It enforces the presence limits. |
 | `encodeAwarenessUpdate`, `decodeAwarenessUpdate` | Convert presence entries to and from the wire format. |
 | `AWAY_STATES`, `AwayState` (type), `isAwayState`, `readAwayState` | The states `active`, `idle` and `hidden`. `readAwayState` returns `unknown` for any other value. |
@@ -489,7 +489,7 @@ Host and agent calls over HTTP. See the sections above for the flows.
 | --- | --- |
 | `createFirestoreStorage(options)` | A `RoomStorage` on Firestore over REST. See [Run on Firebase](#run-on-firebase). |
 | `FirestoreStorageOptions` (type), `FirestoreError` | The options type, and the error that the adapter throws. |
-| `MAX_VALUE_BYTES` | The limit of one stored value, 1,000,000 bytes. |
+| `MAX_VALUE_BYTES` | The limit of one stored value as JSON text, 1,000,000 bytes. Bytes go in as base64, so they take about a third more. |
 | `prefixEnd(prefix)` | The first string after every string with that prefix, or `null` when there is none. |
 
 ## Limits
