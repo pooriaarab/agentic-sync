@@ -31,7 +31,7 @@ export function isSafePeerName(name: unknown): name is string {
 // Throws for a name that is not safe. Use it on input you must refuse.
 export function assertSafePeerName(name: unknown): string {
   if (!isSafePeerName(name)) {
-    throw new Error(`peer name must be 1 to ${MAX_NAME_LENGTH} letters, digits, spaces, or . _ ' -`);
+    throw new Error(`peer name must be 1 to ${MAX_NAME_LENGTH} letters, digits, spaces, or . _ ' ’ ( ) -`);
   }
   return name;
 }

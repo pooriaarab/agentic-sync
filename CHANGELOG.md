@@ -7,8 +7,9 @@
   The client now throws for another name: change `--name` and
   `AGENTIC_SYNC_NAME` values that use them. The server drops an unsafe name
   from the presence it relays and keeps the socket, so older clients keep
-  working. New exports: `isSafePeerName`, `assertSafePeerName`,
-  `displayPeerName`.
+  working. A host name from `authorize` follows the same set: peers show
+  `Unknown` for another one. New exports: `isSafePeerName`,
+  `assertSafePeerName`, `displayPeerName`, `MAX_NAME_LENGTH`, `FALLBACK_NAME`.
 
 ## 0.2.0
 

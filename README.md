@@ -65,7 +65,7 @@ export default createSyncWorker({
     return {
       principal: { id: user.id, kind: "human" },
       role: await myRoleFor(user, docId), // owner, editor, commenter, viewer
-      name: user.displayName, // optional. Shown in presence in place of the client's name.
+      name: user.displayName, // optional. Shown in presence in place of the client's name. Use the safe set for names.
     };
   },
 });

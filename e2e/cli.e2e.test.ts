@@ -49,6 +49,15 @@ describe("the agentic-realtime CLI", () => {
     expect(json((await cli(["doc", "snapshot", "--doc", "c1"])).out).map((s: any) => s.name)).toEqual(["s1"]);
   });
 
+  test("a snapshot name that is not a safe peer name still saves and restores", async () => {
+    const name = "_" + "draft-".repeat(10);
+    await cli(["doc", "apply", "--doc", "c2", "--root", "body", "--text", "one"]);
+    expect((await cli(["doc", "snapshot", "--doc", "c2", "--name", name])).code).toBe(0);
+    await cli(["doc", "apply", "--doc", "c2", "--root", "body", "--text", "two", "--mode", "replace"]);
+    expect((await cli(["doc", "restore", "--doc", "c2", "--name", name])).code).toBe(0);
+    expect(json((await cli(["doc", "get", "--doc", "c2"])).out).body).toBe("one");
+  });
+
   test("blame names the person and the agent that wrote each run", async () => {
     const person = await SyncClient.connect({ url: `${server.ws}/api/v1/docs/c3/ws?token=editor` });
     await person.edit((ydoc) => ydoc.getText("body").insert(0, "Hi "));
