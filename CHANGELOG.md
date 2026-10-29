@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Peer names use a closed character set, with a 40 character cap. The set is
+  letters, digits, marks, spaces, and `. _ ' ’ ( ) -`. Emoji and `@` are out.
+  The client now throws for another name: change `--name` and
+  `AGENTIC_SYNC_NAME` values that use them. The server drops an unsafe name
+  from the presence it relays and keeps the socket, so older clients keep
+  working. A host name from `authorize` follows the same set: peers show
+  `Unknown` for another one. New exports: `isSafePeerName`,
+  `assertSafePeerName`, `displayPeerName`, `MAX_NAME_LENGTH`, `FALLBACK_NAME`.
+
 ## 0.2.0
 
 This release changes the `Realtime` port. If you wrote your own adapter or host,

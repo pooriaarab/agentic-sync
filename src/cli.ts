@@ -68,6 +68,11 @@ Set AGENTIC_SYNC_URL and AGENTIC_SYNC_TOKEN. The token stays off the command lin
 
 Other flags: --server <url>, --name <label for peers>. The server sets your kind from the token.`;
 
+// `--name` is a snapshot name for these commands, so it is not a peer name.
+function peerName(sub: string | undefined, name: string | undefined): string {
+  return sub === "snapshot" || sub === "restore" || name === undefined ? "agentic-realtime cli" : name;
+}
+
 export async function runCli(
   argv: string[],
   env: Record<string, string | undefined> = process.env,
@@ -82,7 +87,7 @@ export async function runCli(
     }
     const server = flags.server ?? env.AGENTIC_SYNC_URL;
     if (!server) throw new UsageError("set AGENTIC_SYNC_URL or pass --server");
-    const target: sdk.Target = { server, token: env.AGENTIC_SYNC_TOKEN, name: flags.name ?? "agentic-realtime cli" };
+    const target: sdk.Target = { server, token: env.AGENTIC_SYNC_TOKEN, name: peerName(sub, flags.name) };
     const doc = flags.doc;
     let result: unknown;
     switch (sub) {

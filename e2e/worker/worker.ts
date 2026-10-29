@@ -7,6 +7,7 @@ const TOKENS: Record<string, Grant> = {
   editor2: { principal: { id: "person-2", kind: "human" }, role: "owner" },
   agent: { principal: { id: "agent-7", kind: "agent_of_human" }, role: "editor" },
   named: { principal: { id: "person-9", kind: "human" }, role: "editor", name: "Ana" },
+  hostile: { principal: { id: "person-10", kind: "human" }, role: "editor", name: "Ana\u202Eevil" },
   viewer: { principal: { id: "person-3", kind: "human" }, role: "viewer" },
 };
 

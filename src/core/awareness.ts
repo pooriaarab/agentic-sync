@@ -1,5 +1,6 @@
 import * as decoding from "lib0/decoding";
 import * as encoding from "lib0/encoding";
+import { isSafePeerName } from "./names.js";
 import type { PrincipalKind } from "./types.js";
 
 export interface AwarenessEntry {
@@ -181,8 +182,12 @@ export class AwarenessRelay {
         continue;
       }
       const state = parseState(entry.state);
+      // An unsafe name is left out, not punished: an older client keeps
+      // its socket and its peers show the fallback name.
+      if ("name" in state && !isSafePeerName(state.name)) delete state.name;
       state.kind = identity.kind;
-      if (identity.name !== undefined) state.name = identity.name;
+      if (identity.name !== undefined && isSafePeerName(identity.name)) state.name = identity.name;
+      else if (identity.name !== undefined) delete state.name;
       const stamped = { id: entry.id, clock: entry.clock, state: JSON.stringify(state) };
       this.own(owner, entry.id);
       this.entries.set(entry.id, stamped);
