@@ -29,6 +29,7 @@ describe("help and version never start the server", () => {
     ["cli.js", ["--help"], "help"],
     ["cli.js", ["--version"], "version"],
     ["cli.js", ["mcp", "--help"], "help"],
+    ["cli.js", ["mcp", "--bogus", "--help"], "help"],
     ["cli.js", ["mcp", "-h"], "help"],
     ["cli.js", ["mcp", "--version"], "version"],
     ["cli.js", ["mcp", "-V"], "version"],
@@ -40,6 +41,8 @@ describe("help and version never start the server", () => {
     ["mcp-bin.js", ["-h"], "help"],
     ["mcp-bin.js", ["-V"], "version"],
     ["mcp-bin.js", ["-v"], "version"],
+    ["mcp-bin.js", ["--help", "extra"], "help"],
+    ["mcp-bin.js", ["--bogus", "--version"], "version"],
   ];
   for (const [file, args, kind] of cases) {
     test(`${file} ${args.join(" ")} exits 0 within 5 s`, async () => {

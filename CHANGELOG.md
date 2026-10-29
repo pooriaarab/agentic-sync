@@ -2,7 +2,7 @@
 
 ## 0.4.3
 
-No breaking changes. Upgrading from 0.4.2 needs no code change.
+Upgrading from 0.4.2 needs no code change. One MCP client config can break: a config that passes an extra argument to the server now gets exit 2 and no server. Remove the argument.
 
 ### Changed
 
@@ -10,8 +10,8 @@ No breaking changes. Upgrading from 0.4.2 needs no code change.
 
 ### Fixed
 
-- `mcp --help`, `mcp -h`, `mcp --version`, and `mcp -V` print and exit 0. They never start the server. `mcp -v` and `agentic-realtime-mcp -v` also print the version.
-- `mcp` with an argument it does not know, and `agentic-realtime-mcp` with an unknown flag, exit 2 with a message. They never start the server.
+- `mcp` and `agentic-realtime-mcp` print help for `--help` or `-h`, and the version for `--version`, `-V`, or `-v`. They exit 0 and never start the server, even with other arguments given. Help wins over version.
+- `mcp` and `agentic-realtime-mcp` given any other argument, and no help or version flag, exit 2 with a message. They never start the server.
 
 ### Internal
 
