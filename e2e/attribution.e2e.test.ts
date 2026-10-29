@@ -191,4 +191,31 @@ describe("who wrote what, under wrangler dev", () => {
     await person.edit((doc) => doc.getText("body").delete(0, 1));
     expect((await getAttribution(target(server, "viewer"), "deleter")).authors).toEqual([AGENT]);
   });
+
+  test("a restore that only removes formatting keeps the authors", async () => {
+    const agent = await join(server, "format", "agent");
+    await append(agent, "agent paragraph");
+    const person = await join(server, "format", "editor");
+    await until(() => text(person) === "agent paragraph", "the agent's text to arrive");
+    await person.snapshot("plain");
+    await person.edit((doc) => doc.getText("body").format(0, 15, { bold: true }));
+    await person.restore("plain");
+    expect(person.doc.getText("body").toDelta()).toEqual([{ insert: "agent paragraph" }]);
+    expect(await blame(target(server, "viewer"), "format", "body")).toEqual([{ text: "agent paragraph", author: AGENT }]);
+  });
+
+  test("a restore brings back an embedded type without a throw", async () => {
+    const person = await join(server, "embed", "editor");
+    await person.edit((doc) => {
+      const body = doc.getText("body");
+      body.insert(0, "x");
+      body.insertEmbed(1, new Y.Map([["k", "v"]]));
+    });
+    await person.snapshot("with-embed");
+    await person.edit((doc) => doc.getText("body").delete(0, 2));
+    await person.restore("with-embed");
+    const [first, second] = person.doc.getText("body").toDelta() as { insert: string | Y.Map<string> }[];
+    expect(first.insert).toBe("x");
+    expect((second.insert as Y.Map<string>).toJSON()).toEqual({ k: "v" });
+  });
 });

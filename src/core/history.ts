@@ -33,46 +33,74 @@ export function rootKind(doc: Y.Doc, root: string): Kind | "empty" {
 const copy = (value: unknown): unknown =>
   value instanceof Y.AbstractType ? (value as Y.Map<unknown>).clone() : value;
 
-type Delta = { insert: string | object; attributes?: Record<string, unknown> };
+type Attributes = Record<string, unknown>;
+type Delta = { insert: string | object; attributes?: Attributes };
 
 // One UTF-16 unit of text, or one embed, with its formatting.
 interface Unit {
-  key: string;
+  // The character or embed alone. Two units with the same char differ only in formatting.
+  char: string;
+  attributes: Attributes;
   op: Delta;
-  unit?: string;
 }
 
 function unitsOf(text: Y.Text): Unit[] {
   return (text.toDelta() as Delta[]).flatMap((op) => {
-    const format = op.attributes === undefined ? "" : JSON.stringify(op.attributes);
-    if (typeof op.insert !== "string") return [{ key: `${format}|${JSON.stringify(op.insert)}`, op }];
-    return op.insert.split("").map((unit) => ({ key: `${format}|${unit}`, unit, op: { insert: unit, attributes: op.attributes } }));
+    const attributes = op.attributes ?? {};
+    if (typeof op.insert !== "string") return [{ char: `\0${JSON.stringify(op.insert)}`, attributes, op }];
+    return op.insert.split("").map((unit) => ({ char: unit, attributes, op: { insert: unit, attributes: op.attributes } }));
   });
 }
 
-// Makes `text` hold what `target` holds. Only the part in the middle that
-// differs changes, so the rest keeps its authors and its formatting.
+// What to set on a unit with `from` formatting to give it `to` formatting. Null removes a key.
+function attributeChange(from: Attributes, to: Attributes): Attributes | null {
+  const change: Attributes = {};
+  for (const key of Object.keys(to)) if (JSON.stringify(from[key]) !== JSON.stringify(to[key])) change[key] = to[key];
+  for (const key of Object.keys(from)) if (!(key in to)) change[key] = null;
+  return Object.keys(change).length > 0 ? change : null;
+}
+
+// Keeps units whose characters match and only changes their formatting.
+function retainWithFormat(now: Unit[], then: Unit[]): Delta[] {
+  const ops: { retain: number; attributes?: Attributes }[] = [];
+  now.forEach((unit, i) => {
+    const change = attributeChange(unit.attributes, then[i].attributes);
+    const last = ops[ops.length - 1];
+    if (last !== undefined && JSON.stringify(last.attributes) === JSON.stringify(change ?? undefined)) last.retain += 1;
+    else ops.push({ retain: 1, ...(change === null ? {} : { attributes: change }) });
+  });
+  return ops as unknown as Delta[];
+}
+
+const copyEmbed = (value: string | object): string | object =>
+  value instanceof Y.AbstractType ? (value as Y.Map<unknown>).clone() : value;
+
+// Makes `text` hold what `target` holds. Units with the same character stay,
+// so their authors stay, and only their formatting changes. Characters that
+// differ are deleted and inserted again.
 function rewriteText(text: Y.Text, target: Y.Text): void {
   const [now, then] = [unitsOf(text), unitsOf(target)];
   let head = 0;
-  while (head < now.length && head < then.length && now[head].key === then[head].key) head++;
+  while (head < now.length && head < then.length && now[head].char === then[head].char) head++;
   // Never cut between the two halves of a surrogate pair.
-  if (head > 0 && ((now[head - 1].unit?.charCodeAt(0) ?? 0) & 0xfc00) === 0xd800) head--;
+  if (head > 0 && (now[head - 1].char.charCodeAt(0) & 0xfc00) === 0xd800) head--;
   let tail = 0;
-  while (tail < now.length - head && tail < then.length - head && now[now.length - 1 - tail].key === then[then.length - 1 - tail].key) tail++;
-  if (tail > 0 && ((now[now.length - tail].unit?.charCodeAt(0) ?? 0) & 0xfc00) === 0xdc00) tail--;
+  while (tail < now.length - head && tail < then.length - head && now[now.length - 1 - tail].char === then[then.length - 1 - tail].char) tail++;
+  if (tail > 0 && (now[now.length - tail].char.charCodeAt(0) & 0xfc00) === 0xdc00) tail--;
+  const [nowMiddle, thenMiddle] = [now.slice(head, now.length - tail), then.slice(head, then.length - tail)];
   const runs: Delta[] = [];
-  for (const { op } of then.slice(head, then.length - tail)) {
+  for (const { op } of thenMiddle) {
     const last = runs[runs.length - 1];
     const format = JSON.stringify(op.attributes);
     if (last !== undefined && typeof last.insert === "string" && typeof op.insert === "string" && JSON.stringify(last.attributes) === format) {
       last.insert += op.insert;
-    } else runs.push({ insert: op.insert, ...(op.attributes === undefined ? {} : { attributes: op.attributes }) });
+    } else runs.push({ insert: copyEmbed(op.insert), ...(op.attributes === undefined ? {} : { attributes: op.attributes }) });
   }
   text.applyDelta([
-    ...(head > 0 ? [{ retain: head }] : []),
-    ...(now.length - head - tail > 0 ? [{ delete: now.length - head - tail }] : []),
+    ...retainWithFormat(now.slice(0, head), then.slice(0, head)),
+    ...(nowMiddle.length > 0 ? [{ delete: nowMiddle.length }] : []),
     ...runs,
+    ...retainWithFormat(now.slice(now.length - tail), then.slice(then.length - tail)),
   ]);
 }
 

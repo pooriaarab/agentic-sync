@@ -270,8 +270,8 @@ TypeScript with no Cloudflare code.
   4 to 5000), and also stays under about 1.5 MB with the ids of its authors. Each new client id starts a range, so a client that reconnects
   often uses them fast. Past the limit the oldest ranges go, `dropped` counts
   them, and their text shows as unattributed. The log is not a signed record.
-- A restore touches only the part of a text root that differs, formatting
-  included, so the rest keeps its authors. Text that a restore brings back is
+- A restore keeps every unit of text whose character is unchanged, so it keeps
+  its author. A restore that only removes formatting changes no author. Text that a restore brings back is
   new text by the person who restored it. An undo that brings back deleted
   text does the same.
 - Yjs holds an update that needs missing content, and applies it inside the next

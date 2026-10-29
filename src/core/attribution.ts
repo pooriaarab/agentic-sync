@@ -40,6 +40,7 @@ export class AttributionLog {
   private dropped = 0;
   private lost = false;
   private authorsBytes = 0;
+  private indexByKey = new Map<string, number>();
   private newest = new Map<number, AttributionRange>();
 
   constructor(private readonly maxRanges = DEFAULT_MAX_RANGES) {}
@@ -69,6 +70,7 @@ export class AttributionLog {
     log.dropped = dropped;
     log.lost = lost === true;
     log.authorsBytes = log.authors.reduce((sum, author) => sum + authorBytes(author), 0);
+    log.indexByKey = new Map(log.authors.map((author, i) => [AttributionLog.key(author), i]));
     log.reindex();
     return log;
   }
@@ -83,7 +85,7 @@ export class AttributionLog {
   private static key = (p: Principal) => `${p.kind}:${p.id}`;
 
   private indexOf(author: Principal): number {
-    return this.authors.findIndex((known) => AttributionLog.key(known) === AttributionLog.key(author));
+    return this.indexByKey.get(AttributionLog.key(author)) ?? -1;
   }
 
   private static structsOf(update: Uint8Array) {
@@ -107,6 +109,7 @@ export class AttributionLog {
     const take = () => {
       if (index < 0) {
         index = this.authors.push({ id: author.id, kind: author.kind }) - 1;
+        this.indexByKey.set(AttributionLog.key(author), index);
         this.authorsBytes += authorBytes(author);
       }
       return index;
@@ -151,6 +154,7 @@ export class AttributionLog {
     const moved = new Map(used.map((old, next) => [old, next]));
     this.authors = used.map((old) => this.authors[old]);
     this.authorsBytes = this.authors.reduce((sum, author) => sum + authorBytes(author), 0);
+    this.indexByKey = new Map(this.authors.map((author, i) => [AttributionLog.key(author), i]));
     for (const range of this.ranges) range.author = moved.get(range.author)!;
   }
 

@@ -59,6 +59,8 @@ async function launchWorker(vars: Record<string, string>, persist: string): Prom
       // The group is already gone.
     }
   };
+  // A run that ends without stop() must not leave workerd behind.
+  process.once("exit", killGroup);
   let log = "";
   child.stdout?.on("data", (chunk) => (log += chunk));
   child.stderr?.on("data", (chunk) => (log += chunk));
@@ -84,6 +86,7 @@ async function launchWorker(vars: Record<string, string>, persist: string): Prom
     log: () => log,
     stop: () =>
       new Promise((resolve) => {
+        if (child.exitCode !== null || child.signalCode !== null) return killGroup(), resolve();
         child.once("exit", () => resolve());
         killGroup();
       }),
