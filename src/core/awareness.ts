@@ -1,5 +1,6 @@
 import * as decoding from "lib0/decoding";
 import * as encoding from "lib0/encoding";
+import { isSafePeerName } from "./names.js";
 import type { PrincipalKind } from "./types.js";
 
 export interface AwarenessEntry {
@@ -148,7 +149,10 @@ export class AwarenessRelay {
         throw new AwarenessViolation("presence state is too large");
       }
       if (entry.state === "null") continue;
-      parseState(entry.state);
+      const claimed = parseState(entry.state);
+      if ("name" in claimed && !isSafePeerName(claimed.name)) {
+        throw new AwarenessViolation("presence name is not allowed");
+      }
       if (holder === undefined) claims.add(entry.id);
     }
     if ((this.owned.get(owner.socket)?.size ?? 0) + claims.size + takeovers.size > MAX_IDS_PER_SOCKET) {

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Peer names use a closed character set, with a 40 character cap. The client
+  refuses other names and the server closes a socket that sends one. New
+  exports: `isSafePeerName`, `assertSafePeerName`, `displayPeerName`.
+
 ## 0.2.0
 
 This release changes the `Realtime` port. If you wrote your own adapter or host,

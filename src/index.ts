@@ -38,6 +38,13 @@ export {
   encodeAwarenessUpdate,
 } from "./core/awareness.js";
 export type { AwarenessEntry } from "./core/awareness.js";
+export {
+  FALLBACK_NAME,
+  MAX_NAME_LENGTH,
+  assertSafePeerName,
+  displayPeerName,
+  isSafePeerName,
+} from "./core/names.js";
 export { restoreState } from "./core/history.js";
 export { AttributionLog, blameText, DEFAULT_MAX_RANGES } from "./core/attribution.js";
 export type { Attribution, AttributionRange, BlameSpan } from "./core/attribution.js";

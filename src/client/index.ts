@@ -13,6 +13,7 @@ import {
   updateMessage,
 } from "../core/protocol.js";
 import { restoreState } from "../core/history.js";
+import { assertSafePeerName, displayPeerName } from "../core/names.js";
 import { isMachineKind, type PrincipalKind, type SnapshotInfo } from "../core/types.js";
 
 // What a client shows to the others. Do not put personal data here.
@@ -101,7 +102,8 @@ export class SyncClient {
       },
     );
     if (options.presence) {
-      const { name, color = colorFor(name), cursor = null } = options.presence;
+      const name = assertSafePeerName(options.presence.name);
+      const { color = colorFor(name), cursor = null } = options.presence;
       this.awareness.setLocalState({ name, color, cursor } satisfies Presence);
     }
     this.open();
@@ -244,7 +246,7 @@ export class SyncClient {
       .filter(([clientId]) => clientId !== this.doc.clientID)
       .map(([clientId, state]) => {
         const peer = state as Omit<Peer, "clientId" | "machine">;
-        return { clientId, ...peer, machine: isMachineKind(peer.kind) };
+        return { clientId, ...peer, name: displayPeerName(peer.name), machine: isMachineKind(peer.kind) };
       });
   }
 
@@ -257,6 +259,7 @@ export class SyncClient {
   }
 
   setPresence(patch: Partial<Presence>): void {
+    if (patch.name !== undefined) assertSafePeerName(patch.name);
     this.awareness.setLocalState({ ...this.awareness.getLocalState(), ...patch });
   }
 
