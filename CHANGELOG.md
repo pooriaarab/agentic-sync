@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.4.0
+
+No breaking changes. Upgrading from 0.3.0 needs no code change.
+
+### Added
+
+- `RoomStorage`, a key/value port for a room's stored data: `get`, `list` by
+  prefix, `put`, `putAll`, `delete`, and `deleteAll`. The package exports the
+  type, `createMemoryStorage`, and `exportStorage`, which streams the stored
+  data as JSON lines.
+- `agentic-realtime/firestore`: `createFirestoreStorage({ projectId, docId, fetch,
+  token })` stores a document in Firestore over the REST API. It has no Firebase
+  SDK and no secret of its own. It implements `RoomStorage`. The room does not
+  use the port yet, so nothing runs on Firebase today. See "Run on Firebase" in
+  the README for the limits: a key is up to 1000 bytes, a value is under 1 MB as
+  JSON, and `putAll` takes up to 500 entries.
+
+### Docs
+
+- `llms.txt` describes authorship: which principal sent each run of text, how
+  compaction and snapshots keep that log, and how to read it with `blame`.
+
 ## 0.3.0
 
 Read the breaking changes before you upgrade. Check every peer name your code
