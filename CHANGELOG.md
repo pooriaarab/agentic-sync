@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.1
+
+No breaking changes. Upgrading from 0.4.0 needs no code change.
+
+### Fixed
+
+- `agentic-realtime-mcp --help` and `-h` print the usage. `--version` and `-V`
+  print the package version. Both exit without starting the MCP server, so an
+  install check no longer waits on stdin.
+
+### Docs
+
+- The README lists every export of each entry point: the main entry, `/sdk`,
+  `/client`, `/browser`, `/worker`, and `/firestore`.
+
 ## 0.4.0
 
 No breaking changes. Upgrading from 0.3.0 needs no code change.
