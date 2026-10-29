@@ -1,7 +1,5 @@
-import { createSyncWorker } from "../../src/worker.js";
-import type { Grant } from "../../src/core/types.js";
-
-export { SyncRoom } from "../../src/worker.js";
+import { createDurableObjectRealtime, createSyncRoom, createSyncWorker, type SyncEnv } from "../../src/worker.js";
+import type { Grant, Role } from "../../src/core/types.js";
 
 // Test only. A real host reads a session or an API key instead.
 const TOKENS: Record<string, Grant> = {
@@ -18,10 +16,40 @@ function grantFor(token: string): Grant | null {
   return TOKENS[token] ?? null;
 }
 
-// A token comes from a bearer header, or from the query for browsers.
-export default createSyncWorker({
+// Test only. With ROLE_FEED_URL set, the test process answers for the host
+// directory: GET <url>/<principal id> returns { role }. Without it, the
+// role in the token table stands.
+export const SyncRoom = createSyncRoom({
+  reauthorize: async (principal, _docId, env) => {
+    const feed = env.ROLE_FEED_URL as string | undefined;
+    if (feed === undefined) {
+      if (/^user-\d+$/.test(principal.id)) return "editor";
+      return Object.values(TOKENS).find((grant) => grant.principal.id === principal.id)?.role ?? null;
+    }
+    const response = await fetch(`${feed}/${encodeURIComponent(principal.id)}`);
+    return response.ok ? ((await response.json()) as { role: Role | null }).role : null;
+  },
+});
+
+const worker = createSyncWorker({
   authorize: (request) => {
     const bearer = request.headers.get("authorization")?.replace(/^Bearer /, "");
     return grantFor(bearer ?? new URL(request.url).searchParams.get("token") ?? "");
   },
 });
+
+// Test only. Calls the Realtime port with no Worker role check, as a host
+// Worker that skips the check would.
+export default {
+  async fetch(request: Request, env: SyncEnv, ctx: ExecutionContext): Promise<Response> {
+    const { pathname, searchParams } = new URL(request.url);
+    const direct = /^\/test\/direct-snapshot\/([A-Za-z0-9_-]+)$/.exec(pathname);
+    if (direct === null) return worker.fetch!(request as never, env, ctx);
+    const made = await createDurableObjectRealtime(env.SYNC_ROOM).createSnapshot(
+      direct[1],
+      searchParams.get("name") ?? "",
+      TOKENS.editor.principal,
+    );
+    return new Response(null, { status: made === null ? 409 : 201 });
+  },
+};

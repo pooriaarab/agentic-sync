@@ -22,8 +22,21 @@ export function freePort(): Promise<number> {
   });
 }
 
-// Runs the test worker under wrangler dev with fresh storage.
+// Runs the test worker under wrangler dev with fresh storage. A worker
+// that just stopped can still hold the runtime socket for a moment, so a
+// start that finds it taken tries again.
 export async function startWorker(vars: Record<string, string> = {}): Promise<Server> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await launchWorker(vars);
+    } catch (error) {
+      if (attempt >= 4 || !String(error).includes("Address already in use")) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+}
+
+async function launchWorker(vars: Record<string, string>): Promise<Server> {
   const port = await freePort();
   const persist = mkdtempSync(join(tmpdir(), "agentic-realtime-e2e-"));
   const child: ChildProcess = spawn(

@@ -1,5 +1,5 @@
-import type { DocMeta, Grant, Principal, Realtime, SnapshotInfo } from "../core/types.js";
-import { GRANT_HEADER } from "./room.js";
+import type { DocMeta, Grant, Principal, Realtime, Role, SnapshotInfo } from "../core/types.js";
+import { DOC_HEADER, GRANT_HEADER, type SyncRoom } from "./room.js";
 
 export const JURISDICTIONS = ["eu", "fedramp"] as const;
 export type Jurisdiction = (typeof JURISDICTIONS)[number];
@@ -19,12 +19,13 @@ export function createDurableObjectRealtime(
   namespace: DurableObjectNamespace,
   jurisdiction?: Jurisdiction,
 ): Realtime {
-  const scoped = jurisdiction ? namespace.jurisdiction(jurisdiction) : namespace;
+  const scoped = (jurisdiction ? namespace.jurisdiction(jurisdiction) : namespace) as unknown as DurableObjectNamespace<SyncRoom>;
   const room = (docId: string) => scoped.get(scoped.idFromName(docId));
   return {
     connect(docId: string, request: Request, grant: Grant): Promise<Response> {
       const headers = new Headers(request.headers);
       headers.set(GRANT_HEADER, encodeURIComponent(JSON.stringify(grant)));
+      headers.set(DOC_HEADER, docId);
       return room(docId).fetch(new Request(request, { headers }));
     },
     async meta(docId: string): Promise<DocMeta> {
@@ -46,5 +47,9 @@ export function createDurableObjectRealtime(
       const response = await room(docId).fetch(`https://room.internal/snapshots/${name}`);
       return response.status === 200 ? new Uint8Array(await response.arrayBuffer()) : null;
     },
+    revoke: (docId: string, principalId: string) => room(docId).revoke(principalId),
+    updateRole: (docId: string, principalId: string, role: Role | null) =>
+      room(docId).updateRole(principalId, role),
+    roleFor: (docId: string, grant: Grant) => room(docId).roleFor(grant),
   };
 }

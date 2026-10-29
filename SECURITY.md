@@ -13,4 +13,6 @@ advisory with the fix.
 
 - The default Worker refuses every request. You must pass an `authorize` hook.
 - The package has no default credentials.
+- The admin routes stay off until the host sets `SYNC_ADMIN_SECRET` to 32 bytes
+  or more. They compare it in constant time.
 - The server never logs document content or personal data.

@@ -15,7 +15,9 @@ connect and with what role.
 - `agentic-realtime/browser`: `openDocument` (IndexedDB, reconnect) and `peerLabel`.
 - `agentic-realtime`: protocol helpers, the `Realtime` interface, and the types.
 - `agentic-realtime` CLI and `agentic-realtime mcp`: `doc get|apply|snapshot|restore|presence`.
-- `agentic-realtime/sdk`: the same operations as functions.
+- `agentic-realtime/sdk`: the same operations as functions, and the host calls
+  `revokePrincipal` and `setPrincipalRole`. Never put those in the CLI or MCP.
+  An agent must not hold the host secret.
 
 ## Rules
 
