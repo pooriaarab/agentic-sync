@@ -1,4 +1,4 @@
-# agentic-sync agent guide
+# agentic-realtime agent guide
 
 Live edits for people and agents on one document, with offline support.
 
@@ -10,12 +10,12 @@ connect and with what role.
 
 ## What exists now
 
-- `agentic-sync/worker`: `createSyncWorker({ authorize })` and `SyncRoom`.
-- `agentic-sync/client`: `SyncClient` (`connect`, `edit`, `peers`, `snapshot`, `restore`).
-- `agentic-sync/browser`: `openDocument` (IndexedDB, reconnect) and `peerLabel`.
-- `agentic-sync`: protocol helpers, the `Realtime` interface, and the types.
-- `agentic-sync` CLI and `agentic-sync mcp`: `doc get|apply|snapshot|restore|presence`.
-- `agentic-sync/sdk`: the same operations as functions.
+- `agentic-realtime/worker`: `createSyncWorker({ authorize })` and `SyncRoom`.
+- `agentic-realtime/client`: `SyncClient` (`connect`, `edit`, `peers`, `snapshot`, `restore`).
+- `agentic-realtime/browser`: `openDocument` (IndexedDB, reconnect) and `peerLabel`.
+- `agentic-realtime`: protocol helpers, the `Realtime` interface, and the types.
+- `agentic-realtime` CLI and `agentic-realtime mcp`: `doc get|apply|snapshot|restore|presence`.
+- `agentic-realtime/sdk`: the same operations as functions.
 
 ## Rules
 

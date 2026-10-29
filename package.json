@@ -1,5 +1,5 @@
 {
-  "name": "agentic-sync",
+  "name": "agentic-realtime",
   "version": "0.1.0",
   "description": "Live edits for people and agents on one document, with offline support.",
   "keywords": [
@@ -34,7 +34,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "mcpName": "io.github.pooriaarab/agentic-sync",
+  "mcpName": "io.github.pooriaarab/agentic-realtime",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -85,7 +85,7 @@
     "wrangler": "^4.154.0"
   },
   "bin": {
-    "agentic-sync": "./dist/cli.js",
-    "agentic-sync-mcp": "./dist/mcp-bin.js"
+    "agentic-realtime": "./dist/cli.js",
+    "agentic-realtime-mcp": "./dist/mcp-bin.js"
   }
 }

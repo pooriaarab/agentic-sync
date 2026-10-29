@@ -33,7 +33,7 @@ const refused = (status: number, code: string): Response =>
 export function createSyncWorker(options: SyncWorkerOptions): ExportedHandler<SyncEnv> {
   const app = new Hono<{ Bindings: SyncEnv }>();
 
-  app.get("/health", (c) => c.json({ ok: true, pack: "agentic-sync" }));
+  app.get("/health", (c) => c.json({ ok: true, pack: "agentic-realtime" }));
 
   // Checks the document id, then asks the host who the caller is.
   const open = async (request: Request, env: SyncEnv, id: string) => {

@@ -1,6 +1,6 @@
-# agentic-sync rules
+# agentic-realtime rules
 
-These rules bind every run of agentic-sync. They also bind agents that edit
+These rules bind every run of agentic-realtime. They also bind agents that edit
 a document through it.
 
 1. Connect with a principal. Every edit has an author kind.

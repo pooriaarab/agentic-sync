@@ -1,17 +1,17 @@
 ---
-name: agentic-sync
+name: agentic-realtime
 description: "Live edits for people and agents on one document, with offline support. Keywords: yjs,crdt,realtime,collaboration,presence,offline,agents,durable-objects,cloudflare,mcp."
 ---
 
-# agentic-sync
+# agentic-realtime
 
 Live edits for people and agents on one document, with offline support.
 
 ## Use the Worker
 
 ```ts
-import { createSyncWorker } from "agentic-sync/worker";
-export { SyncRoom } from "agentic-sync/worker";
+import { createSyncWorker } from "agentic-realtime/worker";
+export { SyncRoom } from "agentic-realtime/worker";
 
 export default createSyncWorker({ authorize: myAuthorize });
 ```
@@ -22,8 +22,8 @@ the contributors and their kinds.
 ## Use the CLI or MCP
 
 Set `AGENTIC_SYNC_URL` and `AGENTIC_SYNC_TOKEN`. Then run
-`agentic-sync doc apply --doc <id> --root body --text "..."`, or start
-`agentic-sync mcp` and call `doc_get`, `doc_apply`, `doc_snapshot`,
+`agentic-realtime doc apply --doc <id> --root body --text "..."`, or start
+`agentic-realtime mcp` and call `doc_get`, `doc_apply`, `doc_snapshot`,
 `doc_snapshots`, `doc_restore`, and `doc_presence`.
 
 ## Rules

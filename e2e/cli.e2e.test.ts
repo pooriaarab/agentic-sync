@@ -35,7 +35,7 @@ function cli(args: string[], token = "agent"): Promise<{ code: number; out: stri
 
 const json = (out: string) => JSON.parse(out) as any;
 
-describe("the agentic-sync CLI", () => {
+describe("the agentic-realtime CLI", () => {
   test("an agent joins, edits, snapshots, and restores", async () => {
     expect((await cli(["doc", "apply", "--doc", "c1", "--root", "body", "--text", "hello"])).code).toBe(0);
     expect(json((await cli(["doc", "get", "--doc", "c1"])).out)).toEqual({ body: "hello" });
@@ -159,7 +159,7 @@ describe("the CLI checks its flags", () => {
   });
 });
 
-describe("the agentic-sync MCP server over stdio", () => {
+describe("the agentic-realtime MCP server over stdio", () => {
   test("an agent edits through tools, and a viewer gets an error", async () => {
     const connect = async (token: string) => {
       const client = new Client({ name: "e2e", version: "0" });

@@ -25,7 +25,7 @@ export function freePort(): Promise<number> {
 // Runs the test worker under wrangler dev with fresh storage.
 export async function startWorker(vars: Record<string, string> = {}): Promise<Server> {
   const port = await freePort();
-  const persist = mkdtempSync(join(tmpdir(), "agentic-sync-e2e-"));
+  const persist = mkdtempSync(join(tmpdir(), "agentic-realtime-e2e-"));
   const child: ChildProcess = spawn(
     "npx",
     ["wrangler", "dev", "--config", "e2e/worker/wrangler.jsonc", "--ip", "127.0.0.1",

@@ -241,7 +241,7 @@ describe("sync worker under wrangler dev", () => {
       "e2e-artifacts/sync-run.json",
       `${JSON.stringify(
         {
-          suite: "agentic-sync two-client convergence",
+          suite: "agentic-realtime two-client convergence",
           clients: [
             { role: "editor", kind: "human", edits: perClient },
             { role: "editor", kind: "agent_of_human", edits: perClient },

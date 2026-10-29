@@ -15,10 +15,10 @@ const result = (value: unknown, isError = false) => ({
 // Reads AGENTIC_SYNC_URL, AGENTIC_SYNC_TOKEN and AGENTIC_SYNC_NAME. A tool
 // call never carries a credential. The server sets the kind from the token.
 export function createMcpServer(env: Record<string, string | undefined> = process.env): McpServer {
-  const server = new McpServer({ name: "agentic-sync", version: VERSION });
+  const server = new McpServer({ name: "agentic-realtime", version: VERSION });
   const target = (): sdk.Target => {
     if (!env.AGENTIC_SYNC_URL) throw new Error("set AGENTIC_SYNC_URL");
-    return { server: env.AGENTIC_SYNC_URL, token: env.AGENTIC_SYNC_TOKEN, name: env.AGENTIC_SYNC_NAME ?? "agentic-sync mcp" };
+    return { server: env.AGENTIC_SYNC_URL, token: env.AGENTIC_SYNC_TOKEN, name: env.AGENTIC_SYNC_NAME ?? "agentic-realtime mcp" };
   };
   // Every tool joins the document, does its job, and leaves.
   const guard = async (job: (t: sdk.Target) => Promise<unknown>) => {
