@@ -14,7 +14,7 @@ read the migration note and the changed list before you upgrade. The Cloudflare 
 
 ### Migration for adapter authors
 
-Implement each method below. The types are in `src/core/types.ts`.
+Implement each method below. Import `Realtime`, `Grant`, and `Role` from `agentic-realtime`.
 
 - `revoke(docId, principalId)`: close every open socket of the principal, and
   refuse it from now on. Resolve with `{ closed, stored }`. `closed` counts the
@@ -50,14 +50,17 @@ Implement each method below. The types are in `src/core/types.ts`.
 
 - `Authorize` gets a third argument, `env`, with the Worker bindings and
   variables. Existing hosts still compile.
-- A principal id longer than 256 characters is refused. The check is
-  `MAX_PRINCIPAL_ID_LENGTH`.
+- A principal id longer than 256 characters is refused.
 - A snapshot name of `.` or `..` is refused. Names still match
   `SNAPSHOT_NAME_PATTERN`.
 
 ### Added
 
 - Live revocation and role caps (see the README features list).
+- `createSyncRoom({ reauthorize })` in `agentic-realtime/worker`. It re-checks open
+  sockets on a timer. Export it as `SyncRoom` to turn the timer on.
+- Worker variables `SYNC_ADMIN_SECRET` (the host calls), `SYNC_REAUTH_INTERVAL_SECONDS`,
+  and `SYNC_ATTRIBUTION_MAX_RANGES`.
 - Attribution: who sent which content, and `blame` in the SDK and the CLI.
 - Export and delete for owners and for the host.
 - A runnable example host with token sign-in (`npm run example`).
