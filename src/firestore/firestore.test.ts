@@ -41,11 +41,26 @@ it("exports a stored document", async () => {
   expect(text).toContain('"key":"cap:x"');
 });
 
-it("refuses a value over the Firestore limit before any request", async () => {
+it("refuses a value over the Firestore limit before any request, and takes one just under", async () => {
   const fake = createFakeFirestore();
   const storage = createFirestoreStorage({ projectId: "p", docId: "d", fetch: fake.fetch });
-  await expect(storage.put("big", new Uint8Array(MAX_VALUE_BYTES))).rejects.toThrow(/1 MB/);
+  // Bytes grow by a third as base64, so the cap is near 750 000 bytes.
+  await expect(storage.put("big", new Uint8Array(750_000))).rejects.toThrow(/1 MB/);
   expect(fake.requests).toHaveLength(0);
+  await storage.put("big", new Uint8Array(740_000));
+  expect((await storage.get<Uint8Array>("big"))!.length).toBe(740_000);
+});
+
+it("throws a content-free error on a damaged entry, and still erases", async () => {
+  const fake = createFakeFirestore();
+  const storage = createFirestoreStorage({ projectId: "p", docId: "d", fetch: fake.fetch });
+  await storage.put("a", "ok");
+  for (const [name, fields] of fake.docs) fake.docs.set(name, { ...fields, value: { stringValue: '{"secret-text' } });
+  const error = await storage.get("a").catch((e: Error) => e);
+  expect((error as Error).message).toBe("a stored entry is damaged");
+  await expect(storage.list("")).rejects.toThrow("a stored entry is damaged");
+  await storage.deleteAll();
+  expect(fake.docs.size).toBe(0);
 });
 
 it("never puts a token or a value in an error", async () => {

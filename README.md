@@ -320,12 +320,13 @@ TypeScript with no Cloudflare code.
 
 ## Run on Firebase
 
-The room keeps its data behind the `RoomStorage` port: `get`, `list` by prefix,
-`put`, `putAll`, `delete`, and `deleteAll`. It matches the way the room uses
-Durable Object storage. The package ships an in-memory adapter and
-`agentic-realtime/firestore`. The Firestore adapter can hold updates,
-snapshots, authorship logs, and role caps and bans, under the same keys the
-room writes today.
+`RoomStorage` is a small key/value port: `get`, `list` by prefix, `put`,
+`putAll`, `delete`, and `deleteAll`. It matches the way the room uses Durable
+Object storage. The package ships an in-memory adapter and
+`agentic-realtime/firestore`. The Firestore adapter stores values of the same
+shape as the room writes: updates, snapshots, authorship logs, and role caps
+and bans. The room does not use the port yet, so nothing runs on Firebase
+today.
 
 ```ts
 import { createFirestoreStorage } from "agentic-realtime/firestore";
@@ -345,19 +346,24 @@ await storage.deleteAll(); // erase the document
 The adapter uses the Firestore REST API with `fetch` only. It has no Firebase
 SDK and no secret. You pass the `fetch` and a token, or a function that returns
 one. Leave the token out and set `baseUrl` to `http://<FIRESTORE_EMULATOR_HOST>`
-for the emulator. Each document lives under `agentic_realtime/<id>/kv`. The
-adapter keeps the case of the document id and of every key.
+for the emulator. An entry lives at `agentic_realtime/<doc>/kv/<key>`, where
+`<doc>` and `<key>` are base64url text. So the adapter keeps the case of the
+document id and of every key. It refuses an empty key and a key that is not
+well-formed text.
 
 How it is tested: one contract suite, `runStorageContract`, runs against the
 in-memory adapter and the Firestore adapter. By default, the Firestore run uses
 a fake of the REST calls in `src/firestore/fake.ts`. It follows Firestore for
-byte order, atomic commits, and size limits. With `FIRESTORE_EMULATOR_HOST` set,
+byte order, query cursors, atomic commits, and the commit, document, and id
+size limits. With `FIRESTORE_EMULATOR_HOST` set,
 the same suite runs against the real emulator. CI uses the fake. Nobody has
 run the emulator yet.
 
 This port moves the storage only. The room still reads and writes Durable
 Object storage directly, and the WebSocket server still runs in a Durable Object. A Node server on Firebase must bring its own socket layer.
-A value must stay under 1 MB, the Firestore document limit.
+Firestore holds a document of up to 1 MiB, so one value must stay under 1 MB as
+JSON text. Bytes grow by a third as base64, so binary data must stay under about
+750 KB. A larger snapshot or authorship log, which the room allows, does not fit.
 
 ## Limits
 

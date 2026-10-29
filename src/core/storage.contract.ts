@@ -28,6 +28,22 @@ export function runStorageContract(name: string, { make }: ContractOptions): voi
       expect(await storage.get("d:raw")).toEqual(bytes(9, 8, 7));
     });
 
+    it("refuses an empty key and a key with a lone surrogate", async () => {
+      const storage = fresh();
+      await expect(storage.put("", 1)).rejects.toThrow();
+      await expect(storage.get("")).rejects.toThrow();
+      await expect(storage.put("s:\ud800", 1)).rejects.toThrow();
+      await expect(storage.get("s:\udbff")).rejects.toThrow();
+    });
+
+    it("refuses a value that JSON would change", async () => {
+      const storage = fresh();
+      for (const value of [new Map(), new Date(0), { a: () => 1 }, { a: undefined }, undefined, 1n]) {
+        await expect(storage.put("x", value)).rejects.toThrow();
+      }
+      expect(await storage.get("x")).toBeUndefined();
+    });
+
     it("overwrites a key", async () => {
       const storage = fresh();
       await storage.put("cap:p1", "viewer");

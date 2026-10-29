@@ -16,19 +16,34 @@ export interface RoomStorage {
   deleteAll(): Promise<void>;
 }
 
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+// A key is non-empty, well-formed text. A lone surrogate would match another key in a UTF-8 backend.
+export function assertText(text: string, what = "a key"): void {
+  if (text === "" || LONE_SURROGATE.test(text)) throw new Error(`${what} must be non-empty, well-formed text`);
+}
+
 const BYTES = "$bytes";
 
-// JSON text for a value. A Uint8Array becomes { "$bytes": base64 }.
+const isPlain = (value: object) => {
+  const proto = Object.getPrototypeOf(value) as unknown;
+  return proto === Object.prototype || proto === null;
+};
+
+// JSON text for a value. A Uint8Array becomes { "$bytes": base64 }. It refuses
+// what JSON would change or drop: undefined, functions, symbols, bigint, and
+// objects such as Map or Date.
 export function encodeValue(value: unknown): string {
   const text = JSON.stringify(value, function (key, item) {
     const held = (this as Record<string, unknown>)[key];
     if (held instanceof Uint8Array) return { [BYTES]: toBase64(held) };
-    if (item !== null && typeof item === "object" && !Array.isArray(item) && BYTES in item) {
-      throw new Error(`a stored value must not use the key ${BYTES}`);
+    if (held === null || ["string", "number", "boolean"].includes(typeof held)) return item;
+    if (typeof held === "object" && (Array.isArray(held) || isPlain(held))) {
+      if (!Array.isArray(held) && BYTES in held) throw new Error(`a stored value must not use the key ${BYTES}`);
+      return item;
     }
-    return item;
+    throw new Error("a stored value must be JSON or bytes");
   });
-  if (text === undefined) throw new Error("a stored value must be JSON");
   return text;
 }
 
@@ -48,6 +63,7 @@ export function createMemoryStorage(): RoomStorage {
   const sorted = () => [...data.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   return {
     async get<T>(key: string) {
+      assertText(key);
       const text = data.get(key);
       return text === undefined ? undefined : decodeValue<T>(text);
     },
@@ -55,10 +71,11 @@ export function createMemoryStorage(): RoomStorage {
       return new Map(sorted().filter((key) => key.startsWith(prefix)).map((key) => [key, decodeValue<T>(data.get(key)!)]));
     },
     async put(key, value) {
+      assertText(key);
       data.set(key, encodeValue(value));
     },
     async putAll(entries) {
-      const encoded = Object.entries(entries).map(([key, value]) => [key, encodeValue(value)] as const);
+      const encoded = Object.entries(entries).map(([key, value]) => (assertText(key), [key, encodeValue(value)] as const));
       for (const [key, text] of encoded) data.set(key, text);
     },
     async delete(keys) {

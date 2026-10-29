@@ -6,7 +6,7 @@
 // the exact key and the value as JSON text (bytes as base64). A Firestore document
 // holds up to 1 MiB, so one value must stay under 1 MB. The adapter throws when it
 // does not, and never puts content in an error.
-import { decodeValue, encodeValue, type RoomStorage } from "../core/storage.js";
+import { assertText, decodeValue, encodeValue, type RoomStorage } from "../core/storage.js";
 
 export interface FirestoreStorageOptions {
   projectId: string;
@@ -39,6 +39,7 @@ export const MAX_VALUE_BYTES = 1_000_000;
 const PAGE = 300;
 // A commit takes up to 500 writes.
 const COMMIT_WRITES = 500;
+const BATCH_GET = 100;
 
 const base64Url = (text: string) => {
   let binary = "";
@@ -65,7 +66,7 @@ interface Row {
 }
 
 export function createFirestoreStorage(options: FirestoreStorageOptions): RoomStorage {
-  if (options.docId === "") throw new Error("docId must not be empty");
+  assertText(options.docId, "docId");
   const database = `projects/${options.projectId}/databases/${options.databaseId ?? "(default)"}`;
   const root = `${(options.baseUrl ?? "https://firestore.googleapis.com").replace(/\/+$/, "")}/v1/${database}/documents`;
   const parent = `${options.collection ?? "agentic_realtime"}/${base64Url(options.docId)}`;
@@ -92,9 +93,23 @@ export function createFirestoreStorage(options: FirestoreStorageOptions): RoomSt
     return parsed as T;
   }
 
-  const idOf = (key: string) => base64Url(key);
+  const idOf = (key: string) => {
+    assertText(key, "a key");
+    return base64Url(key);
+  };
+  const damaged = () => new Error("a stored entry is damaged");
+  const read = (fields: Record<string, { stringValue?: string }> | undefined, key?: string) => {
+    const text = fields?.value?.stringValue;
+    if (text === undefined || (key !== undefined && fields?.key?.stringValue !== key)) throw damaged();
+    try {
+      return decodeValue<never>(text);
+    } catch {
+      throw damaged();
+    }
+  };
   const nameOf = (key: string) => `${database}/documents/${parent}/kv/${idOf(key)}`;
   const writeOf = (key: string, value: unknown): Write => {
+    assertText(key);
     const json = encodeValue(value);
     if (new TextEncoder().encode(json).length > MAX_VALUE_BYTES) throw new Error("a stored value is over 1 MB, the Firestore limit");
     return { update: { name: nameOf(key), fields: { key: { stringValue: key }, value: { stringValue: json } } } };
@@ -120,9 +135,8 @@ export function createFirestoreStorage(options: FirestoreStorageOptions): RoomSt
       const docs = rows.flatMap((row) => (row.document?.fields ? [row.document.fields] : []));
       for (const fields of docs) {
         const key = fields.key?.stringValue;
-        const value = fields.value?.stringValue;
-        if (key === undefined || value === undefined) continue;
-        found.set(key, decodeValue<T>(value));
+        if (key === undefined) throw damaged();
+        found.set(key, read(fields) as T);
         after = key;
       }
       if (docs.length < PAGE) return found;
@@ -132,8 +146,7 @@ export function createFirestoreStorage(options: FirestoreStorageOptions): RoomSt
   return {
     async get<T>(key: string) {
       const doc = await call<{ fields?: Record<string, { stringValue?: string }> }>("GET", `${parent}/kv/${idOf(key)}`);
-      const value = doc?.fields?.value?.stringValue;
-      return value === undefined ? undefined : decodeValue<T>(value);
+      return doc === null ? undefined : (read(doc.fields, key) as T);
     },
     list,
     async put(key, value) {
@@ -145,17 +158,27 @@ export function createFirestoreStorage(options: FirestoreStorageOptions): RoomSt
       if (writes.length > 0) await commit(writes);
     },
     async delete(keys) {
+      const unique = [...new Set(keys)];
+      const writes = unique.map((key): Write => ({ delete: nameOf(key) }));
       let existed = 0;
-      for (const key of new Set(keys)) {
-        if ((await call("GET", `${parent}/kv/${idOf(key)}`)) !== null) existed += 1;
+      for (let i = 0; i < writes.length; i += BATCH_GET) {
+        const found = await call<{ found?: unknown }[]>("POST", ":batchGet", { documents: writes.slice(i, i + BATCH_GET).map((w) => w.delete) });
+        existed += (found ?? []).filter((row) => row.found !== undefined).length;
       }
-      const writes = [...new Set(keys)].map((key): Write => ({ delete: nameOf(key) }));
       for (let i = 0; i < writes.length; i += COMMIT_WRITES) await commit(writes.slice(i, i + COMMIT_WRITES));
       return existed;
     },
     async deleteAll() {
-      const writes = [...(await list("")).keys()].map((key): Write => ({ delete: nameOf(key) }));
-      for (let i = 0; i < writes.length; i += COMMIT_WRITES) await commit(writes.slice(i, i + COMMIT_WRITES));
+      // Page over document names only, so a damaged entry cannot block the erase.
+      for (;;) {
+        const rows =
+          (await call<Row[]>("POST", `${parent}:runQuery`, {
+            structuredQuery: { from: [{ collectionId: "kv" }], select: { fields: [{ fieldPath: "__name__" }] }, limit: COMMIT_WRITES },
+          })) ?? [];
+        const writes = rows.flatMap((row) => (row.document ? [{ delete: row.document.name }] : []));
+        if (writes.length === 0) return;
+        await commit(writes);
+      }
     },
   };
 }
