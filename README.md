@@ -7,8 +7,14 @@
 
 Live edits for people and agents on one document, with offline support.
 
-> Status: early. Everything below works and has an end-to-end test. The package
-> is not on npm yet, so build it from source.
+> Status: 0.1.0 preview. Most features below have an end-to-end test.
+> Hibernation, the no-outbound-calls rule, and EU placement do not.
+
+## Install
+
+```sh
+npm install agentic-sync
+```
 
 ## Features
 
@@ -27,8 +33,8 @@ Live edits for people and agents on one document, with offline support.
   A restore is a new edit by you. No stored update or snapshot changes.
 - A CLI and an MCP server, so an agent can join and edit with no code.
 - Storage in the object. Updates append to a log. Every 50 updates (set
-  `SYNC_COMPACT_EVERY`) the log folds into one snapshot.
-- WebSocket hibernation. An idle document costs nothing.
+  `SYNC_COMPACT_EVERY`, from 1 to 128) the log folds into one snapshot.
+- WebSocket hibernation. An idle document uses no compute.
 - Roles. Owners and editors write. Commenters and viewers only read. The server
   drops their updates and answers with a permission-denied message.
 - Author labels. Each update keeps the kind of principal that wrote it. The
@@ -154,7 +160,8 @@ order, so its reply to a new sync request proves it has all earlier updates.
 
 The Worker talks to the server through the `Realtime` interface. It has five
 methods: `connect`, `meta`, `createSnapshot`, `listSnapshots`, and
-`getSnapshot`. The Cloudflare adapter implements it with Durable Objects. A Node Yjs server on an EU host can implement it too. The wire
+`getSnapshot`. The Cloudflare adapter implements it with Durable Objects.
+Another server, such as a Node Yjs server, could implement it. The wire
 protocol helpers in `agentic-sync` (`readMessage`, `AwarenessRelay`) are plain
 TypeScript with no Cloudflare code.
 
