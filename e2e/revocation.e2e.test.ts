@@ -166,7 +166,7 @@ describe("live revocation under wrangler dev", () => {
     expect(viewer.denied).toEqual(["read-only role"]);
   });
 
-  test("a revoke closes the sockets even when the cap table is full", async () => {
+  test("a revoke is stored when the role caps are full", async () => {
     const peer = new Peer(wsUrl(server, "capfull", "editor"));
     await peer.synced;
     const code = closeCodeOf(peer);
@@ -177,8 +177,23 @@ describe("live revocation under wrangler dev", () => {
       );
     }
     await expect(setPrincipalRole(admin(server), "capfull", "one-more", "viewer")).rejects.toThrow("CAP_LIMIT");
-    await expect(revokePrincipal(admin(server), "capfull", "person-1")).rejects.toThrow("CAP_LIMIT");
+    expect(await revokePrincipal(admin(server), "capfull", "person-1")).toEqual({ closed: 1 });
     await until(() => code() !== undefined, "the socket to close");
     expect(code()).toBe(4003);
+    expect(await status(server, "capfull", "editor")).toBe(403);
+  });
+
+  test("the room refuses a snapshot from a capped principal, whatever the Worker checked", async () => {
+    const direct = (name: string) =>
+      fetch(`${server.http}/test/direct-snapshot/direct?name=${name}`).then((r) => r.status);
+    expect(await direct("before")).toBe(201);
+    await setPrincipalRole(admin(server), "direct", "person-1", "viewer");
+    expect(await direct("capped")).toBe(409);
+    await setPrincipalRole(admin(server), "direct", "person-1", null);
+    expect(await direct("after")).toBe(201);
+    const names = (await (await fetch(`${server.http}/api/v1/docs/direct/snapshots?token=editor`)).json()) as {
+      name: string;
+    }[];
+    expect(names.map((snapshot) => snapshot.name)).toEqual(["after", "before"]);
   });
 });

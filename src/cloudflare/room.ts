@@ -20,6 +20,7 @@ import {
   effectiveRole,
   isMachineKind,
   MAX_CAPS,
+  MAX_REVOKED,
   MAX_PRINCIPAL_ID_LENGTH,
   MAX_SNAPSHOTS,
   ROLES,
@@ -366,7 +367,11 @@ export class SyncRoom extends DurableObject<RoomEnv> {
   }
 
   private async setCap(principalId: string, cap: Cap | null): Promise<boolean> {
-    if (principalId.length === 0 || principalId.length > MAX_PRINCIPAL_ID_LENGTH) {
+    if (
+      typeof principalId !== "string" ||
+      principalId.length === 0 ||
+      principalId.length > MAX_PRINCIPAL_ID_LENGTH
+    ) {
       throw new TypeError("invalid principal id");
     }
     // A cap of owner never narrows anything, so it is the same as no cap.
@@ -375,7 +380,11 @@ export class SyncRoom extends DurableObject<RoomEnv> {
       await this.ctx.storage.delete(`cap:${principalId}`);
       return true;
     }
-    if (!this.caps.has(principalId) && this.caps.size >= MAX_CAPS) return false;
+    // Role caps and bans have their own limits, so a full table of role
+    // caps never stops a revoke.
+    const ban = cap === "revoked";
+    const held = [...this.caps.values()].filter((value) => (value === "revoked") === ban).length;
+    if (!this.caps.has(principalId) && held >= (ban ? MAX_REVOKED : MAX_CAPS)) return false;
     this.caps.set(principalId, cap);
     await this.ctx.storage.put(`cap:${principalId}`, cap);
     return true;
@@ -383,8 +392,8 @@ export class SyncRoom extends DurableObject<RoomEnv> {
 
   // Closes every socket of the principal and refuses it from now on. Lift
   // the ban with updateRole(id, null). The sockets close even when the
-  // document holds the most caps. Then `stored` is false and a new
-  // connection is not refused, so lift old caps and revoke again.
+  // document holds the most bans. Then `stored` is false and a new
+  // connection is not refused.
   async revoke(principalId: string): Promise<{ closed: number; stored: boolean }> {
     const stored = await this.setCap(principalId, "revoked");
     let closed = 0;

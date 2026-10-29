@@ -81,13 +81,16 @@ export interface Realtime {
   // `stored` is false and a new connection is not refused.
   revoke(docId: string, principalId: string): Promise<{ closed: number; stored: boolean }>;
   // Caps the principal's role, also on sockets that are open now. A null
-  // role lifts the cap. Returns false when the document holds the most caps.
+  // role lifts the cap or the ban. Returns false when the document holds the
+  // most caps.
   updateRole(docId: string, principalId: string, role: Role | null): Promise<boolean>;
   // The principal's role after the cap, or null when it is revoked.
   roleFor(docId: string, grant: Grant): Promise<Role | null>;
 }
 
+// Role caps and bans count apart, so role caps never stop a revoke.
 export const MAX_CAPS = 1000;
+export const MAX_REVOKED = 10_000;
 
 export const DOC_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 

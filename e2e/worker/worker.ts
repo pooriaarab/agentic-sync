@@ -1,4 +1,4 @@
-import { createSyncRoom, createSyncWorker } from "../../src/worker.js";
+import { createDurableObjectRealtime, createSyncRoom, createSyncWorker, type SyncEnv } from "../../src/worker.js";
 import type { Grant, Role } from "../../src/core/types.js";
 
 // Test only. A real host reads a session or an API key instead.
@@ -31,10 +31,25 @@ export const SyncRoom = createSyncRoom({
   },
 });
 
-// A token comes from a bearer header, or from the query for browsers.
-export default createSyncWorker({
+const worker = createSyncWorker({
   authorize: (request) => {
     const bearer = request.headers.get("authorization")?.replace(/^Bearer /, "");
     return grantFor(bearer ?? new URL(request.url).searchParams.get("token") ?? "");
   },
 });
+
+// Test only. Calls the Realtime port with no Worker role check, as a host
+// Worker that skips the check would.
+export default {
+  async fetch(request: Request, env: SyncEnv, ctx: ExecutionContext): Promise<Response> {
+    const { pathname, searchParams } = new URL(request.url);
+    const direct = /^\/test\/direct-snapshot\/([A-Za-z0-9_-]+)$/.exec(pathname);
+    if (direct === null) return worker.fetch!(request as never, env, ctx);
+    const made = await createDurableObjectRealtime(env.SYNC_ROOM).createSnapshot(
+      direct[1],
+      searchParams.get("name") ?? "",
+      TOKENS.editor.principal,
+    );
+    return new Response(null, { status: made === null ? 409 : 201 });
+  },
+};

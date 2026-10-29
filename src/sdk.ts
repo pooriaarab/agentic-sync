@@ -115,7 +115,11 @@ async function admin(target: AdminTarget, docId: string, action: "revoke" | "rol
     body: JSON.stringify(body),
   });
   const result = (await response.json().catch(() => ({}))) as { error?: { code: string } };
-  if (!response.ok) throw new Error(`the server refused the request: ${result.error?.code ?? response.status}`);
+  if (!response.ok) {
+    const closed = (result as { closed?: number }).closed;
+    const note = closed === undefined ? "" : ` (${closed} sockets closed)`;
+    throw new Error(`the server refused the request: ${result.error?.code ?? response.status}${note}`);
+  }
   return result;
 }
 
