@@ -1,6 +1,6 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": { "types": ["@cloudflare/workers-types"] },
-  "include": ["src/worker.ts", "src/cloudflare", "e2e/worker"],
+  "include": ["src/worker.ts", "src/cloudflare", "e2e/worker", "examples/host"],
   "exclude": []
 }

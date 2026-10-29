@@ -64,6 +64,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.worker.json",
     "test": "vitest run",
     "clean": "rm -rf dist",
+    "example": "WRANGLER_SEND_METRICS=false wrangler dev --config examples/host/wrangler.jsonc",
     "ci:local": "npm run build && npm run typecheck && npm test"
   },
   "dependencies": {

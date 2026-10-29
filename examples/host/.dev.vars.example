@@ -1,0 +1,6 @@
+# Copy to .dev.vars, then replace every value. The worker refuses a token shorter than
+# 32 bytes, so this file does nothing until you change it. Make a token with:
+#   openssl rand -hex 32
+HOST_TOKENS='{"replace-me": {"principal": {"id": "ana", "kind": "human"}, "role": "owner", "name": "Ana"}}'
+# The host secret for /api/v1/admin. At least 32 bytes.
+SYNC_ADMIN_SECRET='replace-me'

@@ -4,6 +4,7 @@ coverage/
 *.tgz
 .env
 .env.local
+.dev.vars
 .DS_Store
 .wrangler/
 e2e-artifacts/
