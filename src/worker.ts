@@ -14,7 +14,7 @@ import {
   type Authorize,
 } from "./core/types.js";
 
-export { assertGrant } from "./core/types.js";
+export { assertGrant, ROLES } from "./core/types.js";
 export type { Authorize, Grant, Principal, Role } from "./core/types.js";
 export { SyncRoom, createSyncRoom } from "./cloudflare/room.js";
 export type { Reauthorize } from "./cloudflare/room.js";
@@ -60,7 +60,7 @@ async function denyUnlessAdmin(request: Request, env: SyncEnv): Promise<Response
     warnedAdminOff = true;
     return refused(503, "ADMIN_DISABLED");
   }
-  const given = request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
+  const given = /^Bearer\s+(\S+)\s*$/i.exec(request.headers.get("authorization") ?? "")?.[1] ?? "";
   return (await matchesSecret(given, secret)) ? null : refused(401, "UNAUTHORIZED");
 }
 

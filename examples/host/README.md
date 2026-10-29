@@ -51,22 +51,36 @@ node dist/cli.js doc get --doc other                 # refused: this token is fo
 ```
 
 A call with no token, or with a token that is not in `HOST_TOKENS`, gets `401`. The
-viewer token can read, and its edits are refused. Anyone can read the same
-document with the HTTP API and the header `Authorization: Bearer <token>`.
+viewer token can read, and its edits are refused. A caller with a token can also use
+the HTTP API with the header `Authorization: Bearer <token>`. This call returns the
+role, the update count, and the contributors of a document, not its text:
+
+```sh
+curl -H "Authorization: Bearer <agent token>" http://127.0.0.1:8787/api/v1/docs/notes
+```
 
 ## End a session
 
-Revoke a person at once with the host secret. This closes their sockets and refuses
-them until you lift it:
+Revoke a person or an agent at once with the host secret from `.dev.vars`. This closes
+their sockets and refuses them until you lift it:
+
+```sh
+curl -X POST -H "Authorization: Bearer <host secret>" -H "content-type: application/json" \
+  -d '{"principalId": "bot-1"}' http://127.0.0.1:8787/api/v1/admin/docs/notes/revoke
+```
+
+The SDK does the same from your own backend code:
 
 ```ts
 import { revokePrincipal } from "agentic-realtime/sdk";
 
-await revokePrincipal({ server: "http://127.0.0.1:8787", secret: SYNC_ADMIN_SECRET }, "notes", "bot-1");
+const host = { server: "http://127.0.0.1:8787", secret: process.env.SYNC_ADMIN_SECRET! };
+await revokePrincipal(host, "notes", "bot-1");
 ```
 
-Or remove the token from `HOST_TOKENS` and restart. The room asks `reauthorize` every
-minute, so those sessions end within a minute.
+The room also asks `reauthorize` every minute. A principal can hold several tokens, so
+it keeps the widest role of the tokens that may open the document. It loses access
+when the table lists none for that document.
 
 ## Limits
 

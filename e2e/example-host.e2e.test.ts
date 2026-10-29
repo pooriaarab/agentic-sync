@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { SyncClient } from "../src/client/index.js";
 import { revokePrincipal } from "../src/sdk.js";
 import { startWorker, until, type Server } from "./server.js";
 
@@ -20,12 +21,15 @@ let server: Server;
 beforeAll(async () => {
   if (!existsSync("dist/cli.js")) throw new Error("run npm run build first");
   // The README says to put the secrets in .dev.vars, so this does the same.
+  // A person who ran the README steps has their own file there, so put it back.
   const devVars = "examples/host/.dev.vars";
+  const own = existsSync(devVars) ? readFileSync(devVars) : undefined;
   writeFileSync(devVars, `HOST_TOKENS='${TOKENS}'\nSYNC_ADMIN_SECRET='${SECRET}'\n`);
   try {
     server = await startWorker({}, undefined, EXAMPLE);
   } finally {
-    rmSync(devVars, { force: true });
+    if (own === undefined) rmSync(devVars, { force: true });
+    else writeFileSync(devVars, own);
   }
 }, 120_000);
 
@@ -75,18 +79,47 @@ describe("the example host, as its README runs it", () => {
     expect((await cli(["doc", "get", "--doc", "notes"], OWNER)).code).toBe(0);
   });
 
-  test("without a usable HOST_TOKENS the Worker serves no document", async () => {
-    const cases: Record<string, string>[] = [{}, { HOST_TOKENS: JSON.stringify({ short: { principal: { id: "a", kind: "human" }, role: "owner" } }) }];
-    for (const vars of cases) {
+  test("the timer keeps the widest role of the tokens of one principal", async () => {
+    const [view, own] = [randomBytes(32).toString("hex"), randomBytes(32).toString("hex")];
+    const table = JSON.stringify({
+      [view]: { principal: { id: "ana", kind: "human" }, role: "viewer" },
+      [own]: { principal: { id: "ana", kind: "human" }, role: "owner" },
+    });
+    const timed = await startWorker({ HOST_TOKENS: table, SYNC_REAUTH_INTERVAL_SECONDS: "1" }, undefined, EXAMPLE);
+    try {
+      const client = await SyncClient.connect({
+        url: `${timed.ws}/api/v1/docs/timer/ws`,
+        headers: { authorization: `bearer  ${own}` },
+        timeoutMs: 3000,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+      await client.edit((doc) => doc.getText("body").insert(0, "still owner"));
+      expect(client.denied).toEqual([]);
+    } finally {
+      await timed.stop();
+    }
+  }, 120_000);
+
+  test("a table that cannot load makes the Worker serve no document, and logs no token", async () => {
+    const token = randomBytes(32).toString("hex");
+    const grant = { principal: { id: "a", kind: "human" }, role: "owner" };
+    const cases: { vars: Record<string, string>; why: RegExp }[] = [
+      { vars: {}, why: /set HOST_TOKENS/ },
+      { vars: { HOST_TOKENS: JSON.stringify({ short: grant }) }, why: /at least 32 bytes/ },
+      { vars: { HOST_TOKENS: `{"${token}": owner}` }, why: /not valid JSON/ },
+      { vars: { HOST_TOKENS: JSON.stringify({ [token]: { ...grant, docs: "notes" } }) }, why: /docs in HOST_TOKENS/ },
+    ];
+    for (const { vars, why } of cases) {
       const bare = await startWorker(vars, undefined, EXAMPLE);
       try {
         const response = await fetch(`${bare.http}/api/v1/docs/notes`, { headers: { authorization: `Bearer ${AGENT}` } });
         expect(response.status).toBe(500);
         // Wrangler prints the error a moment after the response.
-        await until(() => /HOST_TOKENS/.test(bare.log()), "the Worker to log why it refuses");
+        await until(() => why.test(bare.log()), "the Worker to log why it refuses");
+        expect(bare.log()).not.toContain(token.slice(-7));
       } finally {
         await bare.stop();
       }
     }
-  }, 120_000);
+  }, 240_000);
 });
