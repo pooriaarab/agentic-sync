@@ -4,12 +4,16 @@
 
 ### Changed
 
-- `PRINCIPAL_KINDS` and the principal check in `assertGrant` come from
-  `agentic-identity`. The exports keep their names and types.
-- A principal id must match the `agentic-identity` rule: 1 to 128 characters,
-  first a letter, digit, `_` or `-`, then letters, digits, `.`, `_` or `-`.
-  Before, any id of up to 256 characters passed. An id that breaks the rule now
-  fails the grant with HTTP 500, as a bad grant did before.
+- Breaking for ids outside the rule. A principal id must match the
+  `agentic-identity` rule: 1 to 128 characters, first a letter, digit, `_` or
+  `-`, then letters, digits, `.`, `_` or `-`. Before, any id of up to 256
+  characters passed. A grant with another id fails with HTTP 500. The admin
+  routes (revoke and role) and the caps refuse it with `INVALID_PRINCIPAL_ID`.
+- Before you upgrade, map your ids to the rule in `authorize`. Lift every cap
+  and ban stored under an id that breaks the rule. The admin routes refuse that
+  id after the upgrade.
+- `PRINCIPAL_KINDS` and `PrincipalKind` come from `agentic-identity`. The names
+  and types do not change.
 
 ## 0.4.1
 

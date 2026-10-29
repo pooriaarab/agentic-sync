@@ -23,8 +23,8 @@ import {
   effectiveRole,
   isMachineKind,
   MAX_CAPS,
+  isPrincipalId,
   MAX_REVOKED,
-  MAX_PRINCIPAL_ID_LENGTH,
   MAX_SNAPSHOTS,
   ROLES,
   type Cap,
@@ -510,13 +510,7 @@ export class SyncRoom extends DurableObject<RoomEnv> {
   }
 
   private async setCap(principalId: string, cap: Cap | null): Promise<boolean> {
-    if (
-      typeof principalId !== "string" ||
-      principalId.length === 0 ||
-      principalId.length > MAX_PRINCIPAL_ID_LENGTH
-    ) {
-      throw new TypeError("invalid principal id");
-    }
+    if (!isPrincipalId(principalId)) throw new TypeError("invalid principal id");
     // A cap of owner never narrows anything, so it is the same as no cap.
     if (cap === null || cap === "owner") {
       this.caps.delete(principalId);

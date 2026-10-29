@@ -61,7 +61,6 @@ export interface SnapshotInfo {
   author: Contributor;
 }
 
-export const MAX_PRINCIPAL_ID_LENGTH = 256;
 // "." and ".." would walk out of the snapshot path.
 export const SNAPSHOT_NAME_PATTERN = /^(?!\.{1,2}$)[A-Za-z0-9._-]{1,64}$/;
 export const MAX_SNAPSHOTS = 50;
@@ -108,6 +107,17 @@ export function canWrite(role: Role): boolean {
 // Every principal kind except a person is machine-made.
 export function isMachineKind(kind: PrincipalKind): boolean {
   return kind !== "human";
+}
+
+// An id on its own, for the admin routes and the caps. The kind is a
+// placeholder: parsePrincipal checks only the id with it.
+export function isPrincipalId(value: unknown): value is string {
+  try {
+    parsePrincipal({ kind: "human", id: value });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function assertGrant(value: unknown): Grant {
