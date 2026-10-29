@@ -2,16 +2,22 @@
 
 ## 0.4.3
 
-Upgrading from 0.4.2 needs no code change. One MCP client config can break: a config that passes an extra argument to the server now gets exit 2 and no server. Remove the argument.
+One MCP client config can break on upgrade. A config that passes an extra
+argument to the server now gets exit 2 and no server. Remove the argument.
+Otherwise, upgrading from 0.4.2 needs no code change.
 
 ### Changed
 
-- The package depends on `agentic-identity` `^0.7.0`. It was `^0.6.0`. The principal kinds and the principal id rule do not change.
+- The package depends on `agentic-identity` `^0.7.0`. It was `^0.6.0`. The
+  principal kinds and the principal id rule do not change.
 
 ### Fixed
 
-- `mcp` and `agentic-realtime-mcp` print help for `--help` or `-h`, and the version for `--version`, `-V`, or `-v`. They exit 0 and never start the server, even with other arguments given. Help wins over version.
-- `mcp` and `agentic-realtime-mcp` given any other argument, and no help or version flag, exit 2 with a message. They never start the server.
+- `mcp` and `agentic-realtime-mcp` print help for `--help` or `-h`, and the
+  version for `--version`, `-V`, or `-v`. They exit 0 and never start the
+  server, even with other arguments given. Help wins over version.
+- `mcp` and `agentic-realtime-mcp` given any other argument, and no help or
+  version flag, exit 2 with a message. They never start the server.
 
 ### Internal
 
