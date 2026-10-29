@@ -39,6 +39,17 @@ export {
 } from "./core/awareness.js";
 export type { AwarenessEntry } from "./core/awareness.js";
 export {
+  DARK_BACKGROUND,
+  GRAPHIC_CONTRAST,
+  LIGHT_BACKGROUND,
+  TEXT_CONTRAST,
+  contrastRatio,
+  isHexColor,
+  peerColor,
+  safePeerColor,
+} from "./core/colors.js";
+export type { ColorMode } from "./core/colors.js";
+export {
   FALLBACK_NAME,
   MAX_NAME_LENGTH,
   assertSafePeerName,
