@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.4.3
+
+An MCP client config that passes an extra argument to the server breaks on
+upgrade. The server no longer starts. The config gets exit 0 with help or
+version text, or exit 2. Remove the argument.
+Otherwise, upgrading from 0.4.2 needs no code change.
+
+### Changed
+
+- The package depends on `agentic-identity` `^0.7.0`. It was `^0.6.0`. The
+  principal kinds and the principal id rule do not change.
+
+### Fixed
+
+- `mcp` and `agentic-realtime-mcp` print help for `--help` or `-h`, and the
+  version for `--version`, `-V`, or `-v`. They exit 0 and never start the
+  server, even with other arguments given. Help wins over version.
+- `mcp` and `agentic-realtime-mcp` given any other argument, and no help or
+  version flag, exit 2 with a message. They never start the server.
+
+### Internal
+
+- A new publish on the same ref waits for the running one. A running publish is not cancelled.
+
 ## 0.4.2
 
 Breaking for principal ids outside the `agentic-identity` rule. Read the first

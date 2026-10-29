@@ -61,7 +61,7 @@ export function parseArgs(argv: string[]): CliRequest {
 
 const HELP = `agentic-realtime ${VERSION}
 Usage: agentic-realtime doc <get|apply|snapshot|restore|presence|blame> --doc <id> [flags]
-       agentic-realtime mcp
+       agentic-realtime mcp [-h | --help | -V | -v | --version]
 
 Set AGENTIC_SYNC_URL and AGENTIC_SYNC_TOKEN. The token stays off the command line.
 
