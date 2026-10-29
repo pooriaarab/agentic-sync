@@ -7,7 +7,8 @@ sends first: `presence.name` in `SyncClient.connect` and `openDocument`, the
 `name` of `setPresence`, the `name` of the SDK target, and the `--name` and
 `AGENTIC_SYNC_NAME` values of the CLI and MCP server. A peer name must start with
 a letter or a digit, have 40 characters or fewer, and have no leading, trailing,
-or double space. Call `isSafePeerName` to check a name before you pass it.
+or double space. To check a name before you pass it, call `isSafePeerName` on
+its NFC form: `isSafePeerName(name.normalize("NFC"))`.
 
 ### Breaking
 
@@ -27,6 +28,9 @@ or double space. Call `isSafePeerName` to check a name before you pass it.
   a color, set a `#rrggbb` color with 3:1 contrast on both pages.
 - `Peer` has a new required field, `away`. Code that builds a `Peer` object
   must add it. Code that only reads `client.peers` does not change.
+- `OpenedDocument`, the result of `openDocument`, has a new required field,
+  `stopWatching`. Code that builds an `OpenedDocument`, such as a test double,
+  must add it. Code that only calls `openDocument` does not change.
 
 ### Added
 
