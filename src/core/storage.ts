@@ -5,10 +5,11 @@ import { fromBase64, toBase64 } from "./base64.js";
 // Keys are exact: never fold their case. A value is JSON plus Uint8Array.
 export interface RoomStorage {
   get<T = unknown>(key: string): Promise<T | undefined>;
-  // Every entry whose key starts with the prefix, in key order.
+  // Every entry whose key starts with the prefix, in UTF-8 byte order of the key.
   list<T = unknown>(prefix: string): Promise<Map<string, T>>;
   put(key: string, value: unknown): Promise<void>;
-  // All entries land together or not at all.
+  // All entries land together or not at all. A backend may cap the entries
+  // (Firestore: 500) and the size of a value (Firestore: about 1 MB).
   putAll(entries: Record<string, unknown>): Promise<void>;
   // Returns how many entries existed.
   delete(keys: string[]): Promise<number>;
@@ -37,7 +38,8 @@ export function encodeValue(value: unknown): string {
   const text = JSON.stringify(value, function (key, item) {
     const held = (this as Record<string, unknown>)[key];
     if (held instanceof Uint8Array) return { [BYTES]: toBase64(held) };
-    if (held === null || ["string", "number", "boolean"].includes(typeof held)) return item;
+    if (held === null || typeof held === "string" || typeof held === "boolean") return item;
+    if (typeof held === "number" && Number.isFinite(held) && !Object.is(held, -0)) return item;
     if (typeof held === "object" && (Array.isArray(held) || isPlain(held))) {
       if (!Array.isArray(held) && BYTES in held) throw new Error(`a stored value must not use the key ${BYTES}`);
       return item;
@@ -56,11 +58,12 @@ export function decodeValue<T>(text: string): T {
   }) as T;
 }
 
-// The reference adapter. Values pass through the codec, so it keeps the
-// same limits as a real backend.
+// The reference adapter. Values pass through the codec and keys are checked.
+// It does not enforce the size limits of a real backend.
 export function createMemoryStorage(): RoomStorage {
   const data = new Map<string, string>();
-  const sorted = () => [...data.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  // UTF-8 byte order, as Firestore sorts.
+  const sorted = () => [...data.keys()].sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
   return {
     async get<T>(key: string) {
       assertText(key);

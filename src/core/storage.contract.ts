@@ -38,7 +38,7 @@ export function runStorageContract(name: string, { make }: ContractOptions): voi
 
     it("refuses a value that JSON would change", async () => {
       const storage = fresh();
-      for (const value of [new Map(), new Date(0), { a: () => 1 }, { a: undefined }, undefined, 1n]) {
+      for (const value of [new Map(), new Date(0), { a: () => 1 }, { a: undefined }, undefined, 1n, { a: NaN }, Infinity, -0]) {
         await expect(storage.put("x", value)).rejects.toThrow();
       }
       expect(await storage.get("x")).toBeUndefined();
@@ -63,6 +63,12 @@ export function runStorageContract(name: string, { make }: ContractOptions): voi
       const entries = Object.entries(Object.fromEntries(Array.from({ length: 700 }, (_, i) => [`u:${String(i).padStart(10, "0")}`, i])));
       for (let i = 0; i < 700; i += 100) await storage.putAll(Object.fromEntries(entries.slice(i, i + 100)));
       expect([...(await storage.list("u:")).values()]).toEqual(Array.from({ length: 700 }, (_, i) => i));
+    });
+
+    it("lists in UTF-8 byte order", async () => {
+      const storage = fresh();
+      await storage.putAll({ "k:\u{1F600}": 1, "k:\uFF01": 2, "k:\uE000": 3, "k:z": 4 });
+      expect([...(await storage.list("k:")).keys()]).toEqual(["k:z", "k:\uE000", "k:\uFF01", "k:\u{1F600}"]);
     });
 
     it("keeps the case and the odd characters of a key", async () => {

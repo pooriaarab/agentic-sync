@@ -363,7 +363,10 @@ This port moves the storage only. The room still reads and writes Durable
 Object storage directly, and the WebSocket server still runs in a Durable Object. A Node server on Firebase must bring its own socket layer.
 Firestore holds a document of up to 1 MiB, so one value must stay under 1 MB as
 JSON text. Bytes grow by a third as base64, so binary data must stay under about
-750 KB. A larger snapshot or authorship log, which the room allows, does not fit.
+750 KB. One `putAll` takes up to 500 entries and Firestore caps a commit at 10 MiB. The
+fake does not model that cap. Update keys count up, which Firestore warns can limit
+write throughput on a hot document. Add a single-field index exemption for `value`
+to save index cost. A larger snapshot or authorship log, which the room allows, does not fit.
 
 ## Limits
 

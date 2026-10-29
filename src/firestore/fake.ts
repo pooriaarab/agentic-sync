@@ -30,6 +30,8 @@ export function createFakeFirestore() {
       const writes = body.writes as { update?: { name: string; fields: Fields }; delete?: string }[];
       if (writes.length > 500) return failure(400, "INVALID_ARGUMENT");
       for (const write of writes) {
+        const name = write.update?.name ?? write.delete ?? "";
+        if (Buffer.byteLength(name.slice(name.lastIndexOf("/") + 1)) > 1500) return failure(400, "INVALID_ARGUMENT");
         const size = Object.values(write.update?.fields ?? {}).reduce((sum, v) => sum + Buffer.byteLength(v.stringValue ?? ""), 0);
         if (size > 1_048_576) return failure(400, "INVALID_ARGUMENT");
       }
