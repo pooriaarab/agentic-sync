@@ -23,6 +23,7 @@ export function parseArgs(argv: string[]): CliRequest {
     // `mcp --help` and `mcp --version` must answer and exit, never start the server.
     if (rest.some((a) => a === "--help" || a === "-h")) return { command: "help", flags: {} };
     if (rest.some((a) => a === "--version" || a === "-V" || a === "-v")) return { command: "version", flags: {} };
+    if (rest.length > 0) throw new UsageError(`mcp takes no argument, got "${rest[0]}"`);
     return { command: "mcp", flags: {} };
   }
   if (first !== "doc") throw new UsageError(`unknown command "${first}"`);

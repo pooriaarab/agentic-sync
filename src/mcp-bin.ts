@@ -8,10 +8,13 @@ Runs the MCP server on stdio. An MCP client starts it.
 `;
 
 const flag = process.argv[2];
-if (flag === "--version" || flag === "-V") {
+if (flag === "--version" || flag === "-V" || flag === "-v") {
   process.stdout.write(`${VERSION}\n`);
 } else if (flag === "--help" || flag === "-h") {
   process.stdout.write(HELP);
+} else if (flag !== undefined) {
+  process.stderr.write(`unknown argument "${flag}"\nRun "agentic-realtime-mcp --help" for usage.\n`);
+  process.exit(2);
 } else {
   // Loaded only when serving, so --help and --version never pay for the server's imports.
   import("./mcp.js")

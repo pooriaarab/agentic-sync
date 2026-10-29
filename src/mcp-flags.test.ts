@@ -16,6 +16,7 @@ function run(file: string, args: string[]): Promise<{ code: number | null; out: 
     child.stdout.on("data", (d) => (out += d));
     child.stderr.on("data", (d) => (err += d));
     const timer = setTimeout(() => child.kill("SIGKILL"), 5_000);
+    child.on("error", (e) => resolve({ code: null, out, err: String(e) }));
     child.on("close", (code) => {
       clearTimeout(timer);
       resolve({ code, out, err });
@@ -31,8 +32,14 @@ describe("help and version never start the server", () => {
     ["cli.js", ["mcp", "-h"], "help"],
     ["cli.js", ["mcp", "--version"], "version"],
     ["cli.js", ["mcp", "-V"], "version"],
+    ["cli.js", ["mcp", "-v"], "version"],
+    ["cli.js", ["-h"], "help"],
+    ["cli.js", ["-V"], "version"],
     ["mcp-bin.js", ["--help"], "help"],
     ["mcp-bin.js", ["--version"], "version"],
+    ["mcp-bin.js", ["-h"], "help"],
+    ["mcp-bin.js", ["-V"], "version"],
+    ["mcp-bin.js", ["-v"], "version"],
   ];
   for (const [file, args, kind] of cases) {
     test(`${file} ${args.join(" ")} exits 0 within 5 s`, async () => {
@@ -40,6 +47,16 @@ describe("help and version never start the server", () => {
       expect([r.code, r.err]).toEqual([0, ""]);
       if (kind === "version") expect(r.out.trim()).toBe(VERSION);
       else expect(r.out).toContain("Usage");
+    });
+  }
+});
+
+describe("an unknown argument fails closed and never starts the server", () => {
+  for (const [file, args] of [["cli.js", ["mcp", "--bogus"]], ["mcp-bin.js", ["--bogus"]]] as [string, string[]][]) {
+    test(`${file} ${args.join(" ")} exits 2 within 5 s`, async () => {
+      const r = await run(file, args);
+      expect(r.code).toBe(2);
+      expect(r.err).toContain("--bogus");
     });
   }
 });
