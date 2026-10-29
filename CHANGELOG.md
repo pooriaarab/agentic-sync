@@ -2,17 +2,20 @@
 
 ## 0.3.0
 
-Read the breaking changes before you upgrade. Check each `--name` and
-`AGENTIC_SYNC_NAME` value first. A peer name must start with a letter or a
-digit, have 40 characters or fewer, and have no leading, trailing, or double
-space.
+Read the breaking changes before you upgrade. Check every peer name your code
+sends first: `presence.name` in `SyncClient.connect` and `openDocument`, the
+`name` of `setPresence`, the `name` of the SDK target, and the `--name` and
+`AGENTIC_SYNC_NAME` values of the CLI and MCP server. A peer name must start with
+a letter or a digit, have 40 characters or fewer, and have no leading, trailing,
+or double space. Call `isSafePeerName` to check a name before you pass it.
 
 ### Breaking
 
 - Peer names use a closed character set, with a 40 character cap. The set is
   letters, digits, marks, spaces, and `. _ ' ’ ( ) -`. Emoji and `@` are out.
-  The client now throws for another name: change `--name` and
-  `AGENTIC_SYNC_NAME` values that use them. A name must also start with a
+  The client now throws for another name, in `SyncClient.connect`, `setPresence`,
+  `openDocument`, and the SDK, as well as in the CLI and MCP server. Change each
+  name that uses other characters. A name must also start with a
   letter or a digit, have no leading, trailing, or double space, and have at
   most 3 combining marks in a row. Invisible characters are out. The server
   drops an unsafe name from the presence it relays and keeps the socket, so
