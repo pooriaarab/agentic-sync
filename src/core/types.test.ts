@@ -7,6 +7,9 @@ const grant = (extra: Record<string, unknown>) => ({ principal, role: "editor", 
 describe("assertGrant refuses a bad principal or grant", () => {
   test.each([
     ["no principal", { role: "editor" }],
+    ["a null grant", null],
+    ["a string grant", "x"],
+    ["an array principal", { principal: [], role: "editor" }],
     ["a missing kind", { principal: { id: "ana" }, role: "editor" }],
     ["an unknown kind", { principal: { id: "ana", kind: "bot" }, role: "editor" }],
     ["an empty id", { principal: { id: "", kind: "human" }, role: "editor" }],
