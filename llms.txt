@@ -6,6 +6,14 @@ Keywords: yjs,crdt,realtime,collaboration,presence,offline,agents,durable-object
 
 - Worker: createSyncWorker({ authorize }) from "agentic-realtime/worker".
 - Protocol: connect a Yjs client to /api/v1/docs/:id/ws.
+- Authorship: the room logs which principal (id and kind) sent each run of text.
+  Compaction keeps the log, and each named snapshot keeps a copy. The kind marks
+  agent text as machine-made.
+- Read it: blame() from "agentic-realtime/sdk", `agentic-realtime doc blame`,
+  the doc_blame MCP tool, or GET /api/v1/docs/:id/attribution.
+- Limits: the log keeps up to 4000 ranges by default (SYNC_ATTRIBUTION_MAX_RANGES,
+  4 to 5000) and stays under about 1.5 MB. Older text then shows as unattributed.
+  Export and erase, by the owner or the host, cover the log.
 
 ## Docs
 
