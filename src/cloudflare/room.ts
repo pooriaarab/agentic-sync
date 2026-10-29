@@ -468,7 +468,11 @@ export class SyncRoom extends DurableObject<RoomEnv> {
       yield line({ type: "authors", authors: room.meta().contributors });
       yield line({
         type: "caps",
-        caps: [...room.caps].map(([principalId, cap]) => ({ principalId, cap })),
+        // A stored cap that is not a known value counts as revoked, as in access.
+        caps: [...room.caps].map(([principalId, cap]) => ({
+          principalId,
+          cap: cap === "revoked" || ROLES.includes(cap as Role) ? cap : "revoked",
+        })),
       });
       yield line({ type: "attribution", ...room.attribution.labeled() });
       for (const [key, update] of await storage.list<UpdateRecord>({ prefix: "u:" })) {

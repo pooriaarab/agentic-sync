@@ -150,6 +150,7 @@ describe("export and delete, under wrangler dev", () => {
     const lines = await exportDocument(target("editor2", second), "erase");
     expect(lines.find((l) => l.type === "attribution")).toMatchObject({ authors: [AGENT] });
     expect(lines.filter((l) => l.type === "snapshot")).toEqual([]);
+    expect(lines.find((l) => l.type === "caps")).toMatchObject({ caps: [] });
   }, 240_000);
 
   test("an export holds the caps and the bans", async () => {
