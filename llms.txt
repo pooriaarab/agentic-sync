@@ -15,6 +15,9 @@ Keywords: yjs,crdt,realtime,collaboration,presence,offline,agents,durable-object
 - Limits: the log keeps up to 4000 ranges by default (SYNC_ATTRIBUTION_MAX_RANGES,
   4 to 5000) and stays under about 1.5 MB. Older text then shows as unattributed.
   Export and erase, by the owner or the host, cover the log.
+- Export: owners use `agentic-realtime doc export --doc <id>` or MCP doc_export.
+  Both return a JSON array. Delete, revoke, and role changes stay client/SDK-only.
+  Never give an agent the host secret.
 - Firebase: createFirestoreStorage({ projectId, docId, fetch, token }) from
   "agentic-realtime/firestore" stores a document in Firestore over REST, with no
   SDK. It implements the RoomStorage port, which the in-memory adapter also does.

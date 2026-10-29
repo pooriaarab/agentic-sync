@@ -1,6 +1,6 @@
 {
   "name": "agentic-realtime",
-  "version": "0.4.4",
+  "version": "0.5.0",
   "description": "Live edits for people and agents on one document, with offline support.",
   "keywords": [
     "yjs",

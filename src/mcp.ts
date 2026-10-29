@@ -20,7 +20,7 @@ export function createMcpServer(env: Record<string, string | undefined> = proces
     if (!env.AGENTIC_SYNC_URL) throw new Error("set AGENTIC_SYNC_URL");
     return { server: env.AGENTIC_SYNC_URL, token: env.AGENTIC_SYNC_TOKEN, name: env.AGENTIC_SYNC_NAME ?? "agentic-realtime mcp" };
   };
-  // Every tool joins the document, does its job, and leaves.
+  // Tools use the caller token. Host secrets are never read here.
   const guard = async (job: (t: sdk.Target) => Promise<unknown>) => {
     try {
       return result(await job(target()));
@@ -30,6 +30,11 @@ export function createMcpServer(env: Record<string, string | undefined> = proces
   };
   const read = { readOnlyHint: true };
 
+  server.registerTool(
+    "doc_export",
+    { description: "Export stored document history as a JSON array. Owners only. Holds the full export in memory.", inputSchema: { doc }, annotations: read },
+    (a) => guard((t) => sdk.exportDocument(t, a.doc)),
+  );
   server.registerTool(
     "doc_get",
     { description: "Read every root of a document as JSON.", inputSchema: { doc }, annotations: read },

@@ -7,7 +7,7 @@ import { VERSION } from "./version.js";
 export class UsageError extends Error {}
 
 const FLAGS = ["server", "doc", "root", "text", "file", "mode", "at", "name", "wait", "snapshot"];
-const SUBCOMMANDS = ["get", "apply", "snapshot", "restore", "presence", "blame"];
+const SUBCOMMANDS = ["get", "apply", "snapshot", "restore", "presence", "blame", "export"];
 
 export interface CliRequest {
   command: "help" | "version" | "mcp" | "doc";
@@ -60,12 +60,13 @@ export function parseArgs(argv: string[]): CliRequest {
 }
 
 const HELP = `agentic-realtime ${VERSION}
-Usage: agentic-realtime doc <get|apply|snapshot|restore|presence|blame> --doc <id> [flags]
+Usage: agentic-realtime doc <get|apply|snapshot|restore|presence|blame|export> --doc <id> [flags]
        agentic-realtime mcp [-h | --help | -V | -v | --version]
 
 Set AGENTIC_SYNC_URL and AGENTIC_SYNC_TOKEN. The token stays off the command line.
 
   get                          Print every root as JSON.
+  export                       Print stored history as a JSON array. Owners only.
   apply --root <r> --text <t> | --file <path|->   [--mode append|replace|insert] [--at <n>]
   snapshot [--name <n>]        Save a snapshot, or list them.
   restore --name <n>           Restore as a new edit.
@@ -97,6 +98,9 @@ export async function runCli(
     const doc = flags.doc;
     let result: unknown;
     switch (sub) {
+      case "export":
+        result = await sdk.exportDocument(target, doc);
+        break;
       case "get":
         result = await sdk.getDoc(target, doc);
         break;

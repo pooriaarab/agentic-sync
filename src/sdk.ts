@@ -10,6 +10,7 @@ import type { Role, SnapshotInfo } from "./core/types.js";
 export interface Target {
   server: string;
   token?: string;
+  headers?: Record<string, string>;
   name?: string;
 }
 
@@ -136,12 +137,12 @@ export async function blame(target: Target, docId: string, root: string, snapsho
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ExportRecord = { type: string; [field: string]: any };
 
-async function call(server: string, path: string, secret: string | undefined, init: RequestInit = {}): Promise<Response> {
+async function call(server: string, path: string, secret: string | undefined, init: RequestInit = {}, extraHeaders: Record<string, string> = {}): Promise<Response> {
   const url = new URL(server);
   url.pathname = `${url.pathname.replace(/\/$/, "")}${path}`;
-  const headers: Record<string, string> = {};
-  if (secret !== undefined) headers.authorization = `Bearer ${secret}`;
-  if (init.body !== undefined) headers["content-type"] = "application/json";
+  const headers = new Headers(extraHeaders);
+  if (secret !== undefined) headers.set("authorization", `Bearer ${secret}`);
+  if (init.body !== undefined) headers.set("content-type", "application/json");
   const response = await fetch(url, { ...init, headers });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: { code: string } };
@@ -192,7 +193,7 @@ const confirmation = (docId: string): RequestInit => ({ method: "DELETE", body: 
 // Everything the room stores for a document, as records, one at a time as
 // they arrive. Use this for a large history. Owners only.
 export async function* exportDocumentStream(target: Target, docId: string): AsyncGenerator<ExportRecord> {
-  yield* records(await call(target.server, `${docPath(docId)}/export`, target.token));
+  yield* records(await call(target.server, `${docPath(docId)}/export`, target.token, {}, target.headers));
 }
 
 // The same records, all at once. This holds the whole export in memory.
@@ -200,7 +201,7 @@ export const exportDocument = (target: Target, docId: string) => collect(exportD
 
 // Deletes all data of a document and closes its sockets. Owners only. This cannot be undone.
 export const deleteDocument = async (target: Target, docId: string) =>
-  (await (await call(target.server, docPath(docId), target.token, confirmation(docId))).json()) as { deleted: true; sockets: number };
+  (await (await call(target.server, docPath(docId), target.token, confirmation(docId), target.headers)).json()) as { deleted: true; sockets: number };
 
 // The same two calls for the host, with the host secret. Keep it out of agents.
 export async function* exportDocumentStreamAsHost(host: AdminTarget, docId: string): AsyncGenerator<ExportRecord> {
