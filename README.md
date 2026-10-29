@@ -90,7 +90,7 @@ The host then calls the admin routes with `Authorization: Bearer <secret>`. Keep
 the secret in your backend. Never give it to an agent.
 
 ```ts
-import { revokePrincipal, setPrincipalRole } from "agentic-sync/sdk";
+import { revokePrincipal, setPrincipalRole } from "agentic-realtime/sdk";
 
 const host = { server: "https://sync.example.com", secret: env.SYNC_ADMIN_SECRET };
 await setPrincipalRole(host, "notes", "person-1", "viewer"); // read-only at once
@@ -113,7 +113,7 @@ methods through the `Realtime` port, or by Durable Object RPC on `SyncRoom`.
 **Timer.** Export a room class that knows how to ask your host:
 
 ```ts
-import { createSyncRoom } from "agentic-sync/worker";
+import { createSyncRoom } from "agentic-realtime/worker";
 
 export const SyncRoom = createSyncRoom({
   // The principal's current role, or null for no access.
