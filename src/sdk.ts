@@ -1,4 +1,6 @@
+import * as Y from "yjs";
 import { SyncClient, type Peer } from "./client/index.js";
+import { blameText, type Attribution, type BlameSpan } from "./core/attribution.js";
 import { readRoots, rootKind, type Kind } from "./core/history.js";
 import type { Role, SnapshotInfo } from "./core/types.js";
 
@@ -28,6 +30,13 @@ function assertTextRoot(client: SyncClient, root: string): void {
   throw new Error(
     `root "${root}" is not text. It holds ${ROOT_LABELS[held]} content, so doc_apply does not edit it.`,
   );
+}
+
+function assertTextRootOf(doc: Y.Doc, root: string): void {
+  const held = rootKind(doc, root);
+  if (held !== "text" && held !== "empty") {
+    throw new Error(`root "${root}" is not text. It holds ${ROOT_LABELS[held]} content, so blame does not read it.`);
+  }
 }
 
 function socketUrl(target: Target, docId: string): string {
@@ -91,6 +100,37 @@ export const restoreSnapshot = (target: Target, docId: string, name: string) =>
     return { restored: name };
   });
 
+async function read(target: Target, docId: string, path: string): Promise<Response> {
+  const url = new URL(target.server);
+  url.pathname = `${url.pathname.replace(/\/$/, "")}/api/v1/docs/${encodeURIComponent(docId)}/${path}`;
+  const response = await fetch(url, {
+    headers: target.token ? { authorization: `Bearer ${target.token}` } : undefined,
+  });
+  if (!response.ok) throw new Error(`the server refused the request: ${response.status}`);
+  return response;
+}
+
+// Who sent which content, now or as of a named snapshot. Any role may read it.
+export const getAttribution = async (target: Target, docId: string, snapshot?: string): Promise<Attribution> =>
+  (await (await read(target, docId, snapshot === undefined ? "attribution" : `snapshots/${encodeURIComponent(snapshot)}/attribution`)).json()) as Attribution;
+
+// Splits a text root into runs and names the principal that sent each one.
+// A run no range names has `author: null`.
+export async function blame(target: Target, docId: string, root: string, snapshot?: string): Promise<BlameSpan[]> {
+  if (snapshot !== undefined) {
+    const log = await getAttribution(target, docId, snapshot);
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, new Uint8Array(await (await read(target, docId, `snapshots/${encodeURIComponent(snapshot)}`)).arrayBuffer()));
+    assertTextRootOf(doc, root);
+    return blameText(doc, root, log);
+  }
+  // Join first, then read the log, so the log is never older than the text.
+  return withDoc(target, docId, async (client) => {
+    assertTextRootOf(client.doc, root);
+    return blameText(client.doc, root, await getAttribution(target, docId));
+  });
+}
+
 // Joins, waits a moment for the others to announce themselves, and lists them.
 export const listPeers = (target: Target, docId: string, waitMs = 1000): Promise<Peer[]> =>
   withDoc(target, docId, async (client) => {
@@ -128,6 +168,7 @@ export const revokePrincipal = (target: AdminTarget, docId: string, principalId:
   admin(target, docId, "revoke", { principalId }) as Promise<{ closed: number }>;
 
 // Caps the role of a principal, also on open sockets. A null role lifts
-// the cap, and with it a revoke.
+// the cap, and with it a revoke. The role "owner" does the same, because a cap
+// of owner narrows nothing.
 export const setPrincipalRole = (target: AdminTarget, docId: string, principalId: string, role: Role | null) =>
   admin(target, docId, "role", { principalId, role });

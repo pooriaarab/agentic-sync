@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 export interface Server {
+  // The storage folder. Pass it to startWorker to start again on the same data.
+  persist: string;
   http: string;
   ws: string;
   log(): string;
@@ -25,10 +27,13 @@ export function freePort(): Promise<number> {
 // Runs the test worker under wrangler dev with fresh storage. A worker
 // that just stopped can still hold the runtime socket for a moment, so a
 // start that finds it taken tries again.
-export async function startWorker(vars: Record<string, string> = {}): Promise<Server> {
+export async function startWorker(
+  vars: Record<string, string> = {},
+  persist: string = mkdtempSync(join(tmpdir(), "agentic-realtime-e2e-")),
+): Promise<Server> {
   for (let attempt = 1; ; attempt++) {
     try {
-      return await launchWorker(vars);
+      return await launchWorker(vars, persist);
     } catch (error) {
       if (attempt >= 4 || !String(error).includes("Address already in use")) throw error;
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -36,24 +41,55 @@ export async function startWorker(vars: Record<string, string> = {}): Promise<Se
   }
 }
 
-async function launchWorker(vars: Record<string, string>): Promise<Server> {
+async function launchWorker(vars: Record<string, string>, persist: string): Promise<Server> {
   const port = await freePort();
-  const persist = mkdtempSync(join(tmpdir(), "agentic-realtime-e2e-"));
   const child: ChildProcess = spawn(
     "npx",
     ["wrangler", "dev", "--config", "e2e/worker/wrangler.jsonc", "--ip", "127.0.0.1",
       "--port", String(port), "--persist-to", persist,
       ...Object.entries(vars).flatMap(([key, value]) => ["--var", `${key}:${value}`])],
-    { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, WRANGLER_SEND_METRICS: "false" } },
+    // Its own process group, so one kill ends npx, wrangler, and workerd. A
+    // lone kill of npx leaves workerd running, and it holds memory and sockets.
+    { stdio: ["ignore", "pipe", "pipe"], detached: true, env: { ...process.env, WRANGLER_SEND_METRICS: "false" } },
   );
+  const killGroup = () => {
+    try {
+      process.kill(-child.pid!, "SIGTERM");
+    } catch {
+      // The group is already gone.
+    }
+  };
+  // A run that ends without stop() must not leave workerd behind. A signal
+  // skips "exit", so end the group on the signal and raise it again.
+  const onSignal = (signal: NodeJS.Signals) => {
+    forget();
+    killGroup();
+    process.kill(process.pid, signal);
+  };
+  const forget = () => {
+    process.removeListener("exit", killGroup);
+    process.removeListener("SIGINT", onSignal);
+    process.removeListener("SIGTERM", onSignal);
+  };
+  process.once("exit", killGroup);
+  process.once("SIGINT", onSignal);
+  process.once("SIGTERM", onSignal);
   let log = "";
   child.stdout?.on("data", (chunk) => (log += chunk));
   child.stderr?.on("data", (chunk) => (log += chunk));
   const http = `http://127.0.0.1:${port}`;
   const deadline = Date.now() + 90_000;
   for (;;) {
-    if (child.exitCode !== null) throw new Error(`wrangler dev exited:\n${log}`);
-    if (Date.now() > deadline) throw new Error(`wrangler dev not ready:\n${log}`);
+    if (child.exitCode !== null) {
+      forget();
+      throw new Error(`wrangler dev exited:\n${log}`);
+    }
+    if (Date.now() > deadline) {
+      // A run that stays alive would hold its sockets against the retry.
+      forget();
+      killGroup();
+      throw new Error(`wrangler dev not ready:\n${log}`);
+    }
     try {
       if ((await fetch(`${http}/health`)).ok) break;
     } catch {
@@ -61,13 +97,16 @@ async function launchWorker(vars: Record<string, string>): Promise<Server> {
     }
   }
   return {
+    persist,
     http,
     ws: `ws://127.0.0.1:${port}`,
     log: () => log,
     stop: () =>
       new Promise((resolve) => {
+        forget();
+        if (child.exitCode !== null || child.signalCode !== null) return killGroup(), resolve();
         child.once("exit", () => resolve());
-        child.kill("SIGTERM");
+        killGroup();
       }),
   };
 }

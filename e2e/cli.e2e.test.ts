@@ -49,6 +49,18 @@ describe("the agentic-realtime CLI", () => {
     expect(json((await cli(["doc", "snapshot", "--doc", "c1"])).out).map((s: any) => s.name)).toEqual(["s1"]);
   });
 
+  test("blame names the person and the agent that wrote each run", async () => {
+    const person = await SyncClient.connect({ url: `${server.ws}/api/v1/docs/c3/ws?token=editor` });
+    await person.edit((ydoc) => ydoc.getText("body").insert(0, "Hi "));
+    await cli(["doc", "apply", "--doc", "c3", "--root", "body", "--text", "bot"]);
+    const spans = json((await cli(["doc", "blame", "--doc", "c3", "--root", "body"])).out);
+    expect(spans).toEqual([
+      { text: "Hi ", author: { id: "person-1", kind: "human", machine: false } },
+      { text: "bot", author: { id: "agent-7", kind: "agent_of_human", machine: true } },
+    ]);
+    expect((await cli(["doc", "blame", "--doc", "c3"])).code).toBe(2);
+  });
+
   test("presence lists the person who is on the document", async () => {
     const person = await SyncClient.connect({
       url: `${server.ws}/api/v1/docs/c2/ws?token=editor`,
@@ -173,7 +185,7 @@ describe("the agentic-realtime MCP server over stdio", () => {
     };
     const agent = await connect("agent");
     const tools = (await agent.listTools()).tools.map((t) => t.name).sort();
-    expect(tools).toEqual(["doc_apply", "doc_get", "doc_presence", "doc_restore", "doc_snapshot", "doc_snapshots"]);
+    expect(tools).toEqual(["doc_apply", "doc_blame", "doc_get", "doc_presence", "doc_restore", "doc_snapshot", "doc_snapshots"]);
 
     await call(agent, "doc_apply", { doc: "m1", root: "body", text: "one" });
     await call(agent, "doc_snapshot", { doc: "m1", name: "first" });
@@ -182,6 +194,9 @@ describe("the agentic-realtime MCP server over stdio", () => {
     await call(agent, "doc_restore", { doc: "m1", name: "first" });
     expect((await call(agent, "doc_get", { doc: "m1" })).body).toEqual({ body: "one" });
     expect((await call(agent, "doc_snapshots", { doc: "m1" })).body[0]).toMatchObject({ name: "first", author: { machine: true } });
+    const blamed = (await call(agent, "doc_blame", { doc: "m1", root: "body" })).body;
+    expect(blamed.length).toBeGreaterThan(0);
+    expect(blamed.every((span: any) => span.author.machine === true)).toBe(true);
     await agent.close();
 
     const viewer = await connect("viewer");

@@ -62,8 +62,22 @@ export function createMcpServer(env: Record<string, string | undefined> = proces
   );
   server.registerTool(
     "doc_restore",
-    { description: "Restore a snapshot as a new edit. History stays.", inputSchema: { doc, name } },
+    { description: "Restore a snapshot as a new edit. History stays. Text the restore brings back counts as written by you.", inputSchema: { doc, name } },
     (a) => guard((t) => sdk.restoreSnapshot(t, a.doc, a.name)),
+  );
+  server.registerTool(
+    "doc_blame",
+    {
+      description:
+        "Read a text root as runs, each with the person or agent that wrote it. author is null where the log has no record. Text that a restore or an undo brought back counts as written by the one who did that. Pass snapshot to read an older version.",
+      inputSchema: {
+        doc,
+        root: z.string().describe("The name of the text root."),
+        snapshot: z.string().optional().describe("A snapshot name."),
+      },
+      annotations: read,
+    },
+    (a) => guard((t) => sdk.blame(t, a.doc, a.root, a.snapshot)),
   );
   server.registerTool(
     "doc_presence",

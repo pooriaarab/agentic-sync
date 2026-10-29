@@ -1,5 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import * as Y from "yjs";
+import { AttributionLog, DEFAULT_MAX_RANGES, LARGEST_MAX_RANGES } from "../core/attribution.js";
 import {
   AwarenessRelay,
   AwarenessViolation,
@@ -111,6 +112,8 @@ export interface RoomEnv {
   SYNC_COMPACT_EVERY?: string;
   // Seconds between re-authorizations of open sockets. Default 60.
   SYNC_REAUTH_INTERVAL_SECONDS?: string;
+  // Ranges the attribution log keeps, 4 to 5000. Default 4000.
+  SYNC_ATTRIBUTION_MAX_RANGES?: string;
 }
 
 // One Durable Object holds one document. It keeps the Y.Doc in memory
@@ -123,6 +126,8 @@ export class SyncRoom extends DurableObject<RoomEnv> {
   private readonly authors = new Map<string, Principal>();
   private readonly compactEvery: number;
   private readonly reauthMs: number;
+  private readonly maxRanges: number;
+  private attribution: AttributionLog;
   // Host caps by principal id. Values come from storage, so they are unknown.
   private readonly caps = new Map<string, unknown>();
   private docId?: string;
@@ -138,6 +143,9 @@ export class SyncRoom extends DurableObject<RoomEnv> {
     this.compactEvery = Number.isInteger(configured)
       ? Math.min(MAX_COMPACT_EVERY, Math.max(1, configured))
       : DEFAULT_COMPACT_EVERY;
+    const ranges = Number.parseInt(env.SYNC_ATTRIBUTION_MAX_RANGES ?? "", 10);
+    this.maxRanges = Number.isInteger(ranges) ? Math.min(LARGEST_MAX_RANGES, Math.max(4, ranges)) : DEFAULT_MAX_RANGES;
+    this.attribution = new AttributionLog(this.maxRanges);
     const reauthSeconds = Number.parseInt(env.SYNC_REAUTH_INTERVAL_SECONDS ?? "", 10);
     this.reauthMs =
       (Number.isInteger(reauthSeconds)
@@ -162,6 +170,16 @@ export class SyncRoom extends DurableObject<RoomEnv> {
     this.authors.set(`${author.kind}:${author.id}`, author);
   }
 
+  // A damaged log must not take the document offline. Start a new one that says history is lost.
+  private readLog(saved: unknown): AttributionLog {
+    try {
+      return AttributionLog.from(saved, this.maxRanges);
+    } catch {
+      console.error("stored attribution is damaged");
+      return AttributionLog.lost(this.maxRanges);
+    }
+  }
+
   private async load(): Promise<void> {
     this.docId = await this.ctx.storage.get<string>("docid");
     const caps = await this.ctx.storage.list({ prefix: "cap:" });
@@ -173,9 +191,11 @@ export class SyncRoom extends DurableObject<RoomEnv> {
       this.compactions = base.compactions;
       this.bytes = base.state.length;
     }
+    this.attribution = this.readLog(await this.ctx.storage.get("attr"));
     const log = await this.ctx.storage.list<UpdateRecord>({ prefix: "u:" });
     for (const [key, record] of log) {
       Y.applyUpdate(this.doc, record.update, FROM_STORAGE);
+      this.attribution.record(record.update, record.author, record.at);
       this.remember(record.author);
       this.bytes += record.update.length;
       this.pending.push(key);
@@ -190,6 +210,7 @@ export class SyncRoom extends DurableObject<RoomEnv> {
     this.bytes += update.length;
     const key = `u:${String(++this.seq).padStart(10, "0")}`;
     const record: UpdateRecord = { update, author, at: Date.now() };
+    this.attribution.record(update, author, record.at);
     void this.ctx.storage.put(key, record);
     this.pending.push(key);
     this.broadcast(updateMessage(update), ws);
@@ -208,6 +229,7 @@ export class SyncRoom extends DurableObject<RoomEnv> {
       at: Date.now(),
     };
     void this.ctx.storage.put("base", base);
+    void this.ctx.storage.put("attr", this.attribution.toJSON());
     void this.ctx.storage.delete(this.pending);
     this.pending = [];
   }
@@ -251,13 +273,25 @@ export class SyncRoom extends DurableObject<RoomEnv> {
     if (taken.has(`s:${wanted}`) || taken.size >= MAX_SNAPSHOTS) return new Response(null, { status: 409 });
     const state = Y.encodeStateAsUpdate(this.doc);
     const record: SnapshotRecord = { name: wanted, at: Date.now(), bytes: state.byteLength, author };
-    await storage.put({ [`s:${wanted}`]: record, [`d:${wanted}`]: state });
+    await storage.put({
+      [`s:${wanted}`]: record,
+      [`d:${wanted}`]: state,
+      [`a:${wanted}`]: this.attribution.toJSON(),
+    });
     return Response.json(this.withLabel(record), { status: 201 });
   }
 
   async fetch(request: Request): Promise<Response> {
     const { pathname } = new URL(request.url);
     if (pathname === "/meta") return Response.json(this.meta());
+    if (pathname === "/attribution") return Response.json(this.attribution.labeled());
+    const saved = /^\/snapshots\/([^/]+)\/attribution$/.exec(pathname);
+    if (saved !== null) {
+      const log = await this.ctx.storage.get(`a:${saved[1]}`);
+      return log === undefined
+        ? new Response(null, { status: 404 })
+        : Response.json(this.readLog(log).labeled());
+    }
     if (pathname.startsWith("/snapshots")) {
       return this.snapshots(request, pathname.split("/")[2]);
     }
@@ -306,10 +340,19 @@ export class SyncRoom extends DurableObject<RoomEnv> {
         canWrite: canWrite(role),
         origin: { ws, author: principal },
         refuse: (update) =>
-          this.bytes + update.length > MAX_DOC_BYTES ? "document size limit reached" : null,
+          this.bytes + update.length > MAX_DOC_BYTES
+            ? "document size limit reached"
+            : this.attribution.conflicts(update, principal)
+              ? "client id belongs to another principal"
+              : null,
       });
     } catch {
+      this.dropHeldUpdates();
       ws.close(1007, "malformed message");
+      return;
+    }
+    if (this.dropHeldUpdates()) {
+      ws.close(1008, "update needs content the room does not have");
       return;
     }
     if (incoming.reply) ws.send(incoming.reply);
@@ -346,6 +389,17 @@ export class SyncRoom extends DurableObject<RoomEnv> {
       (peer) => (peer.deserializeAttachment() as Attachment).socketId === socketId,
     );
     if (old !== undefined) this.evict(old, CLOSE_REPLACED, "client id taken over by a new connection");
+  }
+
+  // Yjs keeps an update that needs missing content and applies it inside the
+  // next update, under that update's sender. Drop it, or the next sender
+  // would get the name on text it did not write. True if one was held.
+  private dropHeldUpdates(): boolean {
+    const { store } = this.doc;
+    const held = store.pendingStructs !== null || store.pendingDs !== null;
+    store.pendingStructs = null;
+    store.pendingDs = null;
+    return held;
   }
 
   // Drops the socket's presence and closes it.
