@@ -53,7 +53,7 @@ npm install agentic-realtime
 
 A demo Worker runs on workers.dev at
 <https://agentic-sync-demo.hello-fd1.workers.dev>.
-`GET /health` answers `200`. Every other route needs a bearer token, so the
+`GET /health` answers `200`. Every document and admin route needs a bearer token, so the
 demo shows the sign-in rule and holds no public document. It runs
 [`examples/host`](examples/host/README.md) with documents pinned to the EU.
 
@@ -66,10 +66,16 @@ npm ci
 npm run deploy:demo
 ```
 
-Then set the two secrets with `wrangler secret put` and the config
-`examples/host/wrangler.demo.jsonc`: `HOST_TOKENS` (see the example host) and
-`SYNC_ADMIN_SECRET`. The deploy is a manual step. No CI job holds a secret.
-The script turns wrangler telemetry off.
+Then set the two secrets. `HOST_TOKENS` is described in the example host.
+Until you set both, every route except `/health` answers `500`.
+
+```sh
+npx wrangler secret put HOST_TOKENS --config examples/host/wrangler.demo.jsonc
+npx wrangler secret put SYNC_ADMIN_SECRET --config examples/host/wrangler.demo.jsonc
+```
+
+The deploy is a manual step. No CI job holds a secret. The config turns
+wrangler telemetry off.
 
 ## Use the Worker
 

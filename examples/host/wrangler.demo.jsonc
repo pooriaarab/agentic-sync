@@ -6,6 +6,8 @@
   "main": "worker.ts",
   "compatibility_date": "2026-01-01",
   "workers_dev": true,
+  "send_metrics": false,
+  "dependencies_instrumentation": { "enabled": false },
   "durable_objects": {
     "bindings": [{ "name": "SYNC_ROOM", "class_name": "SyncRoom" }]
   },
