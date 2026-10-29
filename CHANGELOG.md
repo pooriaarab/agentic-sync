@@ -19,15 +19,18 @@ its NFC form: `isSafePeerName(name.normalize("NFC"))`.
   name that uses other characters. A name must also start with a
   letter or a digit, have no leading, trailing, or double space, and have at
   most 3 combining marks in a row. Invisible characters are out. The server
-  drops an unsafe name from the presence it relays and keeps the socket, so
-  older clients keep working. A host name from `authorize` follows the same
-  set: peers show `Unknown` for another one.
+  drops an unsafe name from the presence it relays and keeps the socket. An
+  older client keeps its socket, but a peer with an unsafe name reaches it with
+  no `name`. Upgrade the clients before you rely on a name. A host name from
+  `authorize` follows the same set: peers show `Unknown` for another one.
 - Peer colors that are not `#rrggbb`, or that are hard to see, are replaced.
   This includes CSS color names and the 0.2.0 default color, which was an
   `hsl(...)` string. A peer shows a different color after you upgrade. To keep
   a color, set a `#rrggbb` color with 3:1 contrast on both pages.
 - `Peer` has a new required field, `away`. Code that builds a `Peer` object
-  must add it. Code that only reads `client.peers` does not change.
+  must add it. A `Peer` is no longer assignable to `Presence`, because its
+  `away` can be `"unknown"`. Code that passes a peer where a `Presence` is
+  expected must change its type.
 - `OpenedDocument`, the result of `openDocument`, has a new required field,
   `stopWatching`. Code that builds an `OpenedDocument`, such as a test double,
   must add it. Code that only calls `openDocument` does not change.
