@@ -90,6 +90,15 @@ export class SyncClient {
   private awayTracker?: AwayTracker;
 
   private constructor(options: ConnectOptions) {
+    // Check the options first, so a bad one leaves nothing behind.
+    const name = options.presence && assertSafePeerName(options.presence.name);
+    if (options.away && !options.presence) throw new Error("the away option needs presence");
+    if (options.away) {
+      this.awayTracker = new AwayTracker({
+        idleAfterSeconds: options.away.idleAfterSeconds,
+        onChange: (away) => this.setPresence({ away }),
+      });
+    }
     this.options = options;
     this.doc = options.doc ?? new Y.Doc();
     this.timeoutMs = options.timeoutMs ?? 10_000;
@@ -106,17 +115,10 @@ export class SyncClient {
       },
     );
     if (options.presence) {
-      const name = assertSafePeerName(options.presence.name);
-      const { color = peerColor(name), cursor = null } = options.presence;
-      this.awareness.setLocalState({ name, color, cursor } satisfies Presence);
+      const { color = peerColor(name!), cursor = null } = options.presence;
+      this.awareness.setLocalState({ name: name!, color, cursor } satisfies Presence);
     }
-    if (options.away && options.presence) {
-      this.awayTracker = new AwayTracker({
-        idleAfterSeconds: options.away.idleAfterSeconds,
-        onChange: (away) => this.setPresence({ away }),
-      });
-      this.setPresence({ away: this.awayTracker.state });
-    }
+    if (this.awayTracker) this.setPresence({ away: this.awayTracker.state });
     this.open();
   }
 

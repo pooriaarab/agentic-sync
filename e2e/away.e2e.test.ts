@@ -34,12 +34,12 @@ class FakePage implements PageLike {
 }
 
 test("peers see a client go idle, active, hidden, and visible", async () => {
+  const watcher = await SyncClient.connect({ url: wsFor("away", "editor2"), presence: { name: "Bo" } });
   const mine = await SyncClient.connect({
     url: wsFor("away", "editor"),
     presence: { name: "Ana" },
-    away: { idleAfterSeconds: 0.4 },
+    away: { idleAfterSeconds: 1.5 },
   });
-  const watcher = await SyncClient.connect({ url: wsFor("away", "editor2"), presence: { name: "Bo" } });
   const page = new FakePage();
   const stop = watchPageAway(mine, page);
   const awayOf = () => watcher.peers.find((p) => p.name === "Ana")?.away;
@@ -53,7 +53,7 @@ test("peers see a client go idle, active, hidden, and visible", async () => {
   await until(() => awayOf() === "hidden", "hidden");
   // Input on a hidden page does not change it.
   page.fire("pointermove");
-  await new Promise((resolve) => setTimeout(resolve, 600));
+  await new Promise((resolve) => setTimeout(resolve, 2000));
   expect(awayOf()).toBe("hidden");
   page.hidden = false;
   page.fire("visibilitychange");
@@ -98,8 +98,9 @@ test("a raw peer cannot send a state outside the three", async () => {
   bare.close();
 });
 
-test("a bad idle time throws before the client connects", () => {
+test("a bad away option throws before the client connects", () => {
   expect(() =>
     SyncClient.open({ url: wsFor("away", "editor"), presence: { name: "Ana" }, away: { idleAfterSeconds: 0 } }),
   ).toThrow(RangeError);
+  expect(() => SyncClient.open({ url: wsFor("away", "editor"), away: { idleAfterSeconds: 5 } })).toThrow(/needs presence/);
 });

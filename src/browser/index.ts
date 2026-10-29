@@ -5,7 +5,8 @@ import { SyncClient, type ConnectOptions, type Peer } from "../client/index.js";
 export interface OpenedDocument {
   client: SyncClient;
   persistence: IndexeddbPersistence;
-  // Removes the page listeners that feed the away tracker. A no-op without `away`.
+  // Removes the page listeners that feed the away tracker. Call it when you
+  // close the document. A no-op without `away`.
   stopWatching: () => void;
 }
 
@@ -34,7 +35,7 @@ const ACTIVITY_EVENTS = ["pointerdown", "pointermove", "keydown", "wheel", "touc
 // The parts of `document` that the page watcher reads. A test passes a stand-in.
 export interface PageLike {
   readonly hidden: boolean;
-  addEventListener(type: string, listener: () => void): void;
+  addEventListener(type: string, listener: () => void, options?: { passive?: boolean }): void;
   removeEventListener(type: string, listener: () => void): void;
 }
 
@@ -44,7 +45,7 @@ export interface PageLike {
 export function watchPageAway(client: SyncClient, page: PageLike = document): () => void {
   const active = () => client.markActive();
   const visibility = () => client.setHidden(page.hidden);
-  for (const type of ACTIVITY_EVENTS) page.addEventListener(type, active);
+  for (const type of ACTIVITY_EVENTS) page.addEventListener(type, active, { passive: true });
   page.addEventListener("visibilitychange", visibility);
   visibility();
   return () => {
