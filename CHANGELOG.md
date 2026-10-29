@@ -11,7 +11,8 @@
   routes (revoke and role) and the caps refuse it with `INVALID_PRINCIPAL_ID`.
 - Before you upgrade, map your ids to the rule in `authorize`. Lift every cap
   and ban stored under an id that breaks the rule. The admin routes refuse that
-  id after the upgrade.
+  id after the upgrade. A slot held by such an entry clears only when the
+  document is deleted.
 - `PRINCIPAL_KINDS` and `PrincipalKind` come from `agentic-identity`. The names
   and types do not change.
 
