@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.4
+
+Upgrading from 0.4.3 needs no code change.
+
+### Changed
+
+- The package depends on `agentic-identity` `^0.9.0`. It was `^0.7.0`. The
+  principal kinds and the principal id rule do not change.
+
 ## 0.4.3
 
 An MCP client config that passes an extra argument to the server breaks on
