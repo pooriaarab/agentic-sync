@@ -36,6 +36,14 @@ test("an unsafe name from a raw socket is dropped, the socket stays, and peers s
   }
   await until(() => watcher.peers.length === 4, "four peers");
   expect(watcher.peers.map((p) => p.name)).toEqual(["Unknown", "Unknown", "Unknown", "Unknown"]);
+  // A raw protocol peer gets the relayed state, which has no name at all.
+  const bare = new Peer(wsFor("names-raw", "editor2"));
+  await bare.synced;
+  await until(() => [61, 62, 63, 64].every((id) => bare.awareness.some((e) => e.id === id)), "the relayed entries");
+  for (const entry of bare.awareness.filter((e) => e.id >= 61 && e.id <= 64)) {
+    expect(JSON.parse(entry.state)).toEqual({ color: "#000", kind: "human" });
+  }
+  bare.close();
   raw.setPresence(65, 1, { name: "Ana" });
   await until(() => watcher.peers.some((p) => p.name === "Ana"), "a safe name on the same socket");
   await watcher.disconnect();

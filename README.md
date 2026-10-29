@@ -170,7 +170,8 @@ true for every kind except a person. A name has 1 to 40 letters, digits, spaces,
 invisible characters. The client throws for any other name (it first converts
 a name to NFC). The server drops an unsafe name from the presence it relays,
 and peers show `Unknown`. The socket stays open. The set does not stop
-look-alike letters from other scripts. Check a name with `isSafePeerName`. Use any Yjs document type on `client.doc`.
+look-alike letters from other scripts. Show a name in an isolated run
+(`<bdi>` or `dir="auto"`), because right-to-left letters are allowed. Check a name with `isSafePeerName`. Use any Yjs document type on `client.doc`.
 The client needs Node 22 or later. It reconnects only if you pass `reconnect: {}`.
 
 ## Use the CLI

@@ -2,7 +2,8 @@
 // letters, marks, digits, and a few marks of punctuation. Format
 // controls (bidi, zero-width, tags), separators, fillers, and variation
 // selectors are all outside the set, so a name cannot hide text or
-// flip the reading order around it.
+// force the reading order. Letters of a right-to-left script are still
+// letters: show a name in its own isolated run (`<bdi>`, `dir="auto"`).
 export const MAX_NAME_LENGTH = 40;
 export const FALLBACK_NAME = "Unknown";
 // Zalgo guard: no more than this many combining marks in a row.
