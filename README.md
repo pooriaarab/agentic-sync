@@ -39,6 +39,8 @@ npm install agentic-realtime
   drops their updates and answers with a permission-denied message.
 - Author labels. Each update keeps the kind of principal that wrote it. The
   API lists the contributors and marks the machine-made ones.
+- Live revocation. The host can revoke a principal or cap its role while it is
+  connected. A timer asks the host again who each socket is.
 - Data residency. Set `SYNC_JURISDICTION=eu` to pin documents to the EU.
 - No outbound calls. The server loads no CDN assets and sends no telemetry.
 
@@ -78,6 +80,46 @@ A document id matches `[A-Za-z0-9_-]{1,128}`. Ids are case sensitive.
 
 An agent kind is one of `agent_of_human`, `agent_of_agent`, `agent`, or
 `user_token`. Only `human` is not machine-made.
+
+## Revoke access while people are connected
+
+A grant is checked when a socket opens. Two paths change it after that.
+
+**Host calls.** Set `SYNC_ADMIN_SECRET` (at least 32 bytes) as a Worker secret.
+The host then calls the admin routes with `Authorization: Bearer <secret>`. Keep
+the secret in your backend. Never give it to an agent.
+
+```ts
+import { revokePrincipal, setPrincipalRole } from "agentic-sync/sdk";
+
+const host = { server: "https://sync.example.com", secret: env.SYNC_ADMIN_SECRET };
+await setPrincipalRole(host, "notes", "person-1", "viewer"); // read-only at once
+await revokePrincipal(host, "notes", "person-1"); // closes every socket, code 4003
+await setPrincipalRole(host, "notes", "person-1", null); // lifts the cap or the revoke
+```
+
+A cap only narrows. The principal gets the narrower of the grant and the cap.
+A revoked principal gets `403 ACCESS_REVOKED` on every route, also for
+snapshots, until the host lifts the revoke. The cap lives in the document's
+storage. One document holds up to 1000 caps. Without a valid secret, the admin
+routes answer `503 ADMIN_DISABLED`. A Worker of your own can call the same
+methods through the `Realtime` port, or by Durable Object RPC on `SyncRoom`.
+
+**Timer.** Export a room class that knows how to ask your host:
+
+```ts
+import { createSyncRoom } from "agentic-sync/worker";
+
+export const SyncRoom = createSyncRoom({
+  // The principal's current role, or null for no access.
+  reauthorize: async (principal, docId) => myRoleFor(principal.id, docId),
+});
+```
+
+Every 60 seconds (set `SYNC_REAUTH_INTERVAL_SECONDS`, 1 to 3600) the room asks
+once for each connected principal. It applies a new role to all sockets of that
+principal. A `null`, a throw, or an unknown role closes them with code 4003. A
+host outage therefore ends the sessions. It does not keep them open.
 
 ## Join a document from Node
 
@@ -192,8 +234,10 @@ TypeScript with no Cloudflare code.
   clients send their next heartbeat, within about 15 seconds.
 - The server stores the author of each update. After compaction it keeps the
   set of all authors, not the author of each single update.
-- The grant is fixed for the life of a socket. A role change or a revocation
-  applies when the client reconnects.
+- Revocation by the host call is immediate. Revocation by the timer takes up to
+  one interval. Without `createSyncRoom`, there is no timer.
+- A client with `reconnect` keeps retrying after code 4003 and gets 403 each
+  time, with growing delays. Stop it in your UI when you revoke.
 - The local `wrangler dev` cannot place objects in a jurisdiction. Test
   placement on a deployed Worker.
 - If you sign in with cookies, check the `Origin` header in `authorize`.

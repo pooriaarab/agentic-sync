@@ -16,15 +16,31 @@ import {
 import {
   assertGrant,
   canWrite,
+  DOC_ID_PATTERN,
+  effectiveRole,
   isMachineKind,
+  MAX_CAPS,
   MAX_SNAPSHOTS,
+  ROLES,
+  type Cap,
   type DocMeta,
   type Grant,
   type Principal,
+  type Role,
   type SnapshotInfo,
 } from "../core/types.js";
 
 export const GRANT_HEADER = "x-agentic-sync-grant";
+export const DOC_HEADER = "x-agentic-sync-doc";
+
+// Asks the host who the principal is now. Returns the principal's current
+// role, or null when it has no access. A throw or an unknown role counts
+// as no access, so a host outage cannot keep a revoked principal in.
+export type Reauthorize = (
+  principal: Principal,
+  docId: string,
+  env: RoomEnv & Record<string, unknown>,
+) => Role | null | Promise<Role | null>;
 
 const MAX_MESSAGE_BYTES = 1024 * 1024;
 // Storage values cap at 2 MiB. Staying under it keeps compaction possible.
@@ -35,7 +51,12 @@ const MAX_COMPACT_EVERY = 128;
 const FROM_STORAGE = "storage";
 // A new socket of the same principal took over this socket's client id.
 const CLOSE_REPLACED = 4001;
+// The host revoked this socket's principal.
+const CLOSE_REVOKED = 4003;
 const PRESENCE_FULL = "presence is full";
+const DEFAULT_REAUTH_SECONDS = 60;
+const MAX_REAUTH_SECONDS = 3600;
+const MAX_PRINCIPAL_ID_LENGTH = 256;
 
 interface Attachment {
   grant: Grant;
@@ -72,6 +93,8 @@ interface SnapshotRecord {
 
 export interface RoomEnv {
   SYNC_COMPACT_EVERY?: string;
+  // Seconds between re-authorizations of open sockets. Default 60.
+  SYNC_REAUTH_INTERVAL_SECONDS?: string;
 }
 
 // One Durable Object holds one document. It keeps the Y.Doc in memory
@@ -83,6 +106,10 @@ export class SyncRoom extends DurableObject<RoomEnv> {
   private readonly relay = new AwarenessRelay();
   private readonly authors = new Map<string, Principal>();
   private readonly compactEvery: number;
+  private readonly reauthMs: number;
+  // Host caps by principal id. Values come from storage, so they are unknown.
+  private readonly caps = new Map<string, unknown>();
+  private docId?: string;
   private pending: string[] = [];
   private seq = 0;
   private compactions = 0;
@@ -95,6 +122,11 @@ export class SyncRoom extends DurableObject<RoomEnv> {
     this.compactEvery = Number.isInteger(configured)
       ? Math.min(MAX_COMPACT_EVERY, Math.max(1, configured))
       : DEFAULT_COMPACT_EVERY;
+    const reauthSeconds = Number.parseInt(env.SYNC_REAUTH_INTERVAL_SECONDS ?? "", 10);
+    this.reauthMs =
+      (Number.isInteger(reauthSeconds)
+        ? Math.min(MAX_REAUTH_SECONDS, Math.max(1, reauthSeconds))
+        : DEFAULT_REAUTH_SECONDS) * 1000;
     this.doc.on("update", (update: Uint8Array, origin: unknown) =>
       this.onUpdate(update, origin),
     );
@@ -105,11 +137,19 @@ export class SyncRoom extends DurableObject<RoomEnv> {
     ctx.blockConcurrencyWhile(() => this.load());
   }
 
+  // A host overrides this to turn on re-authorization. See createSyncRoom.
+  protected reauthorizer(): Reauthorize | undefined {
+    return undefined;
+  }
+
   private remember(author: Principal): void {
     this.authors.set(`${author.kind}:${author.id}`, author);
   }
 
   private async load(): Promise<void> {
+    this.docId = await this.ctx.storage.get<string>("docid");
+    const caps = await this.ctx.storage.list({ prefix: "cap:" });
+    for (const [key, cap] of caps) this.caps.set(key.slice(4), cap);
     const base = await this.ctx.storage.get<BaseRecord>("base");
     if (base !== undefined) {
       Y.applyUpdate(this.doc, base.state, FROM_STORAGE);
@@ -208,6 +248,15 @@ export class SyncRoom extends DurableObject<RoomEnv> {
     const header = request.headers.get(GRANT_HEADER);
     if (header === null) return new Response("missing grant", { status: 400 });
     const grant = assertGrant(JSON.parse(decodeURIComponent(header)));
+    const role = this.capRole(grant);
+    if (role === null) return new Response("access revoked", { status: 403 });
+    grant.role = role;
+    const docId = request.headers.get(DOC_HEADER);
+    if (docId !== null && DOC_ID_PATTERN.test(docId) && docId !== this.docId) {
+      this.docId = docId;
+      await this.ctx.storage.put("docid", docId);
+    }
+    await this.scheduleReauth();
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment({
@@ -226,7 +275,12 @@ export class SyncRoom extends DurableObject<RoomEnv> {
       return;
     }
     const attachment = ws.deserializeAttachment() as Attachment;
-    const { principal, role } = attachment.grant;
+    const { principal } = attachment.grant;
+    const role = this.capRole(attachment.grant);
+    if (role === null) {
+      this.evict(ws, CLOSE_REVOKED, "access revoked");
+      return;
+    }
     let incoming;
     try {
       incoming = readMessage(this.doc, new Uint8Array(data), {
@@ -272,11 +326,109 @@ export class SyncRoom extends DurableObject<RoomEnv> {
     const old = this.ctx.getWebSockets().find(
       (peer) => (peer.deserializeAttachment() as Attachment).socketId === socketId,
     );
-    if (old === undefined) return;
-    this.dropPresence(old);
+    if (old !== undefined) this.evict(old, CLOSE_REPLACED, "client id taken over by a new connection");
+  }
+
+  // Drops the socket's presence and closes it.
+  private evict(ws: WebSocket, code: number, reason: string): void {
+    this.dropPresence(ws);
     // A wake must not hand this socket's ids back to it.
-    old.serializeAttachment({ ...(old.deserializeAttachment() as Attachment), awarenessIds: [] });
-    old.close(CLOSE_REPLACED, "client id taken over by a new connection");
+    ws.serializeAttachment({ ...(ws.deserializeAttachment() as Attachment), awarenessIds: [] });
+    try {
+      ws.close(code, reason);
+    } catch {
+      // The socket is already closed.
+    }
+  }
+
+  // The role after the host's cap, or null when the principal is revoked.
+  private capRole({ principal, role }: Grant): Role | null {
+    return effectiveRole(role, this.caps.get(principal.id));
+  }
+
+  private async setCap(principalId: string, cap: Cap | null): Promise<boolean> {
+    if (principalId.length === 0 || principalId.length > MAX_PRINCIPAL_ID_LENGTH) {
+      throw new TypeError("invalid principal id");
+    }
+    if (cap === null) {
+      this.caps.delete(principalId);
+      await this.ctx.storage.delete(`cap:${principalId}`);
+      return true;
+    }
+    if (!this.caps.has(principalId) && this.caps.size >= MAX_CAPS) return false;
+    this.caps.set(principalId, cap);
+    await this.ctx.storage.put(`cap:${principalId}`, cap);
+    return true;
+  }
+
+  // Closes every socket of the principal and refuses it from now on. Lift
+  // the ban with updateRole(id, null). Returns the number of sockets
+  // closed, or null when the document holds the most caps.
+  async revoke(principalId: string): Promise<number | null> {
+    if (!(await this.setCap(principalId, "revoked"))) return null;
+    let closed = 0;
+    for (const ws of this.ctx.getWebSockets()) {
+      if ((ws.deserializeAttachment() as Attachment).grant.principal.id !== principalId) continue;
+      this.evict(ws, CLOSE_REVOKED, "access revoked");
+      closed += 1;
+    }
+    return closed;
+  }
+
+  // Caps the role of a principal. It applies to the next message on every
+  // open socket, so a downgraded editor is read-only at once. A null role
+  // lifts the cap. Returns false when the document holds the most caps.
+  async updateRole(principalId: string, role: Role | null): Promise<boolean> {
+    if (role !== null && !ROLES.includes(role)) throw new TypeError("invalid role");
+    return this.setCap(principalId, role);
+  }
+
+  // The role of the grant after the cap, or null when it is revoked.
+  roleFor(grant: Grant): Role | null {
+    return this.capRole(grant);
+  }
+
+  private async scheduleReauth(): Promise<void> {
+    if (this.reauthorizer() === undefined) return;
+    if ((await this.ctx.storage.getAlarm()) !== null) return;
+    await this.ctx.storage.setAlarm(Date.now() + this.reauthMs);
+  }
+
+  // Asks the host again who each connected principal is.
+  async alarm(): Promise<void> {
+    const reauthorize = this.reauthorizer();
+    if (reauthorize === undefined || this.docId === undefined) return;
+    const byPrincipal = new Map<string, WebSocket[]>();
+    for (const ws of this.ctx.getWebSockets()) {
+      if (ws.readyState !== WebSocket.OPEN) continue;
+      const { principal } = (ws.deserializeAttachment() as Attachment).grant;
+      const key = `${principal.kind}:${principal.id}`;
+      byPrincipal.set(key, [...(byPrincipal.get(key) ?? []), ws]);
+    }
+    for (const sockets of byPrincipal.values()) {
+      const { principal } = (sockets[0].deserializeAttachment() as Attachment).grant;
+      let role: Role | null;
+      try {
+        role = await reauthorize(principal, this.docId, this.env as RoomEnv & Record<string, unknown>);
+      } catch {
+        role = null;
+      }
+      if (role !== null && !ROLES.includes(role)) role = null;
+      for (const ws of sockets) {
+        // A host call may have closed this socket while we waited.
+        if (ws.readyState !== WebSocket.OPEN) continue;
+        if (role === null) {
+          this.evict(ws, CLOSE_REVOKED, "access revoked");
+          continue;
+        }
+        const attachment = ws.deserializeAttachment() as Attachment;
+        attachment.grant.role = role;
+        ws.serializeAttachment(attachment);
+      }
+    }
+    if (this.ctx.getWebSockets().some((ws) => ws.readyState === WebSocket.OPEN)) {
+      await this.ctx.storage.setAlarm(Date.now() + this.reauthMs);
+    }
   }
 
   // Tells peers that this socket's clients are gone. Safe to call twice.
@@ -299,4 +451,14 @@ export class SyncRoom extends DurableObject<RoomEnv> {
   webSocketError(ws: WebSocket): void {
     this.webSocketClose(ws, 1011);
   }
+}
+
+// A room class that re-authorizes open sockets on a timer. Export it as
+// SyncRoom from the host Worker, in place of the plain class.
+export function createSyncRoom(options: { reauthorize: Reauthorize }): typeof SyncRoom {
+  return class extends SyncRoom {
+    protected override reauthorizer(): Reauthorize {
+      return options.reauthorize;
+    }
+  };
 }

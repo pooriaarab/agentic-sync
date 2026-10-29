@@ -1,7 +1,5 @@
-import { createSyncWorker } from "../../src/worker.js";
-import type { Grant } from "../../src/core/types.js";
-
-export { SyncRoom } from "../../src/worker.js";
+import { createSyncRoom, createSyncWorker } from "../../src/worker.js";
+import type { Grant, Role } from "../../src/core/types.js";
 
 // Test only. A real host reads a session or an API key instead.
 const TOKENS: Record<string, Grant> = {
@@ -17,6 +15,23 @@ function grantFor(token: string): Grant | null {
   if (/^user-\d+$/.test(token)) return { principal: { id: token, kind: "human" }, role: "editor" };
   return TOKENS[token] ?? null;
 }
+
+// Test only. With ROLE_FEED_URL set, the test process answers for the host
+// directory: GET <url>/<principal id> returns { role }. Without it, the
+// role in the token table stands.
+export const SyncRoom = createSyncRoom({
+  reauthorize: async (principal, _docId, env) => {
+    const feed = env.ROLE_FEED_URL as string | undefined;
+    if (feed === undefined) {
+      const known = [...Object.values(TOKENS), grantFor(principal.id)].find(
+        (grant) => grant?.principal.id === principal.id,
+      );
+      return known?.role ?? null;
+    }
+    const response = await fetch(`${feed}/${encodeURIComponent(principal.id)}`);
+    return response.ok ? ((await response.json()) as { role: Role | null }).role : null;
+  },
+});
 
 // A token comes from a bearer header, or from the query for browsers.
 export default createSyncWorker({

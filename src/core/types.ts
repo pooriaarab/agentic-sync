@@ -23,6 +23,20 @@ export interface Grant {
   name?: string;
 }
 
+// A host-set limit on one principal in one document. A cap only narrows
+// the grant: "revoked" removes all access, a role is the most the
+// principal may hold.
+export type Cap = Role | "revoked";
+
+// Everything a principal may do, after the host's cap. A cap that is not
+// a known value counts as revoked, so bad stored data denies access.
+export function effectiveRole(granted: Role, cap: unknown): Role | null {
+  if (cap === undefined) return granted;
+  const capIndex = ROLES.indexOf(cap as Role);
+  if (capIndex < 0) return null;
+  return ROLES[Math.max(ROLES.indexOf(granted), capIndex)];
+}
+
 // The host owns auth. It returns a grant for this request and document,
 // or null to refuse. This package never reads a credential itself.
 export type Authorize = (
@@ -60,7 +74,18 @@ export interface Realtime {
   listSnapshots(docId: string): Promise<SnapshotInfo[]>;
   // The saved state as a Yjs update, or null.
   getSnapshot(docId: string, name: string): Promise<Uint8Array | null>;
+  // Closes every socket of the principal and refuses it from now on.
+  // Returns how many sockets closed, or null when the document holds the
+  // most caps.
+  revoke(docId: string, principalId: string): Promise<number | null>;
+  // Caps the principal's role, also on sockets that are open now. A null
+  // role lifts the cap. Returns false when the document holds the most caps.
+  updateRole(docId: string, principalId: string, role: Role | null): Promise<boolean>;
+  // The principal's role after the cap, or null when it is revoked.
+  roleFor(docId: string, grant: Grant): Promise<Role | null>;
 }
+
+export const MAX_CAPS = 1000;
 
 export const DOC_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 

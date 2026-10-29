@@ -1,6 +1,6 @@
 import { SyncClient, type Peer } from "./client/index.js";
 import { readRoots, rootKind, type Kind } from "./core/history.js";
-import type { SnapshotInfo } from "./core/types.js";
+import type { Role, SnapshotInfo } from "./core/types.js";
 
 // Where to connect, and how to show up. The token is sent as a bearer
 // header. The server decides who you are, and which kind you show as,
@@ -97,3 +97,33 @@ export const listPeers = (target: Target, docId: string, waitMs = 1000): Promise
     await new Promise((resolve) => setTimeout(resolve, waitMs));
     return client.peers;
   });
+
+// Host calls. Keep the secret in your backend, never in an agent: it
+// can revoke any principal.
+export interface AdminTarget {
+  server: string;
+  // SYNC_ADMIN_SECRET of the Worker.
+  secret: string;
+}
+
+async function admin(target: AdminTarget, docId: string, action: "revoke" | "role", body: object) {
+  const url = new URL(target.server);
+  url.pathname = `${url.pathname.replace(/\/$/, "")}/api/v1/admin/docs/${encodeURIComponent(docId)}/${action}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { authorization: `Bearer ${target.secret}`, "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const result = (await response.json()) as { error?: { code: string } };
+  if (!response.ok) throw new Error(`the server refused the request: ${result.error?.code ?? response.status}`);
+  return result;
+}
+
+// Closes every socket of the principal and refuses it from now on.
+export const revokePrincipal = (target: AdminTarget, docId: string, principalId: string) =>
+  admin(target, docId, "revoke", { principalId }) as Promise<{ closed: number }>;
+
+// Caps the role of a principal, also on open sockets. A null role lifts
+// the cap, and with it a revoke.
+export const setPrincipalRole = (target: AdminTarget, docId: string, principalId: string, role: Role | null) =>
+  admin(target, docId, "role", { principalId, role });
