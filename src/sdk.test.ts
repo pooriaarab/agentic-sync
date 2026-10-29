@@ -143,6 +143,28 @@ describe("exportDocumentStream", () => {
     await expect(collectAll(exportDocumentStream(target(), "doc"))).rejects.toThrow(SyntaxError);
   });
 
+  test("a malformed line closes the connection while the body is open", async () => {
+    respond = (res) => {
+      res.writeHead(200);
+      res.write(`${JSON.stringify({ type: "meta" })}\n{"type":\n`);
+      // The body stays open, so only the parse error can close it.
+    };
+    const closed = new Promise<void>((resolve) => (onClose = resolve));
+    const records = exportDocumentStream(target(), "doc");
+    expect((await records.next()).value).toEqual({ type: "meta" });
+    await expect(records.next()).rejects.toThrow(SyntaxError);
+    await closed;
+  });
+
+  test("a body that breaks partway rejects the iteration", async () => {
+    respond = (res) => {
+      res.writeHead(200);
+      res.write(line({ type: "meta" }));
+      setTimeout(() => res.destroy(), 20);
+    };
+    await expect(collectAll(exportDocumentStream(target(), "doc"))).rejects.toThrow();
+  });
+
   test("stopping early closes the connection", async () => {
     respond = (res) => {
       res.writeHead(200);
