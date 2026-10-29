@@ -7,7 +7,7 @@
 
 Live edits for people and agents on one document, with offline support.
 
-> Status: 0.2.0 preview. Most features below have an end-to-end test.
+> Status: 0.3.0 preview. Most features below have an end-to-end test.
 > Hibernation, the no-outbound-calls rule, and EU placement do not.
 
 ## Install
@@ -169,13 +169,15 @@ page. No single color has 4.5:1 on both. `client.peers` keeps a peer's color onl
 if it is `#rrggbb` with 3:1 on both pages. Otherwise it uses the peer's default. You do not set a `kind`. The server
 adds the `kind` of your grant to your presence, so people always see an agent
 as an agent. Each peer in `client.peers` carries that `kind`, and `machine` is
-true for every kind except a person. A name has 1 to 40 letters, digits, spaces,
-`’`, or `. _ ' ( ) -`. It has no bidi controls, zero-width characters, or other
+true for every kind except a person. A name has 1 to 40 characters. It starts
+with a letter or a digit. It has only letters, digits, marks, single spaces, and
+`’ . _ ' ( ) -`. It has no leading, trailing, or double space, and no run of more
+than 3 combining marks. It has no bidi controls, zero-width characters, or other
 invisible characters. The client throws for any other name (it first converts
 a name to NFC). The server drops an unsafe name from the presence it relays,
 and peers show `Unknown`. The socket stays open. The set does not stop
 look-alike letters from other scripts. Show a name in an isolated run
-(`<bdi>` or `dir="auto"`), because right-to-left letters are allowed. Check a name with `isSafePeerName`. Use any Yjs document type on `client.doc`.
+(`<bdi>` or `dir="auto"`), because right-to-left letters are allowed. Check a name with `isSafePeerName(name.normalize("NFC"))`. Use any Yjs document type on `client.doc`.
 
 Pass `away: { idleAfterSeconds: 120 }` with `presence` to tell peers if you are
 `active`, `idle`, or `hidden`. Call `client.markActive()` on input and
@@ -201,7 +203,8 @@ agentic-realtime doc blame --doc notes --root body
 
 Each command joins the document, does one job, prints JSON, and leaves. `doc
 snapshot` without `--name` lists the snapshots. A refused edit exits with 1 and
-prints the reason. `--name` sets the name you show in presence. The server takes
+prints the reason. `--name` sets the name you show in presence, except for `snapshot`
+and `restore`, where it is the snapshot name. The server takes
 your role, your kind, and your author label from the token. The CLI has no
 `--kind` flag. `doc apply` edits text roots and empty roots only. It refuses a
 rich-text, map, or array root and exits with 1, so it never deletes a document.

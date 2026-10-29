@@ -1,29 +1,73 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
-- Presence can carry an away state: `active`, `idle`, or `hidden`. Pass the new
-  `away: { idleAfterSeconds }` option. Every `Peer` has an `away` field that is
-  `unknown` when the peer reports none. New exports: `AwayTracker`,
-  `AwayState`, `isAwayState`, `readAwayState`, `AWAY_STATES`, `watchPageAway`
-  (browser), and `stopWatching` on the result of `openDocument`.
-- Peer colors are `#rrggbb` and pass WCAG 2.2 AA contrast. The default color
-  has 3:1 on a white page and on a `#121212` page. `peerColor` also gives 4.5:1
-  text colors for one page. `client.peers` replaces a color that is not
-  `#rrggbb` or is hard to see. New exports: `peerColor`, `safePeerColor`,
-  `contrastRatio`, `isHexColor`, and the contrast constants.
+Read the breaking changes before you upgrade. Check every peer name your code
+sends first: `presence.name` in `SyncClient.connect` and `openDocument`, the
+`name` of `setPresence`, the `name` of the SDK target, and the `--name` and
+`AGENTIC_SYNC_NAME` values of the CLI and MCP server. A peer name must start with
+a letter or a digit, have 40 characters or fewer, and have no leading, trailing,
+or double space. To check a name before you pass it, call `isSafePeerName` on
+its NFC form: `isSafePeerName(name.normalize("NFC"))`.
+
+### Breaking
+
 - Peer names use a closed character set, with a 40 character cap. The set is
   letters, digits, marks, spaces, and `. _ ' ’ ( ) -`. Emoji and `@` are out.
-  The client now throws for another name: change `--name` and
-  `AGENTIC_SYNC_NAME` values that use them. The server drops an unsafe name
-  from the presence it relays and keeps the socket, so older clients keep
-  working. A host name from `authorize` follows the same set: peers show
-  `Unknown` for another one. New exports: `isSafePeerName`,
-  `assertSafePeerName`, `displayPeerName`, `MAX_NAME_LENGTH`, `FALLBACK_NAME`.
+  The client now throws for another name, in `SyncClient.connect`, `setPresence`,
+  `openDocument`, and the SDK, as well as in the CLI and MCP server. Change each
+  name that uses other characters. A name must also start with a
+  letter or a digit, have no leading, trailing, or double space, and have at
+  most 3 combining marks in a row. Invisible characters are out. The server
+  drops an unsafe name from the presence it relays and keeps the socket. An
+  older client keeps its socket, but a peer with an unsafe name reaches it with
+  no `name`. Upgrade the clients before you rely on a name. A host name from
+  `authorize` follows the same set: peers show `Unknown` for another one.
+- Peer colors that are not `#rrggbb`, or that are hard to see, are replaced.
+  This includes CSS color names and the 0.2.0 default color, which was an
+  `hsl(...)` string. A peer shows a different color after you upgrade. To keep
+  a color, set a `#rrggbb` color with 3:1 contrast on both pages.
+- `Peer` has a new required field, `away`. Code that builds a `Peer` object
+  must add it. A `Peer` is no longer assignable to `Presence`, because its
+  `away` can be `"unknown"`. Code that passes a peer where a `Presence` is
+  expected must change its type.
+- `OpenedDocument`, the result of `openDocument`, has a new required field,
+  `stopWatching`. Code that builds an `OpenedDocument`, such as a test double,
+  must add it. Code that only calls `openDocument` does not change.
+
+### Added
+
+- Presence can carry an away state: `active`, `idle`, or `hidden`. Pass the new
+  `away: { idleAfterSeconds }` option with `presence`. Call `client.markActive()`
+  on input and `client.setHidden(true | false)` when a page hides or shows.
+  The `client.away` getter and the optional `away` field of `Presence` hold the
+  state. The server drops an invalid `away` value. Every `Peer` has an `away`
+  field that is `unknown` when the peer reports none. New exports: `AwayTracker`,
+  `AwayState`, `AwayOptions`, `isAwayState`, `readAwayState`, `AWAY_STATES`,
+  `watchPageAway` and `PageLike` (browser), and `stopWatching` on the result of
+  `openDocument`.
+- Peer colors: `peerColor`, `safePeerColor`, `contrastRatio`, `isHexColor`, the
+  `ColorMode` type, and the contrast constants are exported. The default color has 3:1 on a white
+  page and on a `#121212` page. `peerColor` also gives 4.5:1 text colors for one
+  page.
+- Name helpers: `isSafePeerName`, `assertSafePeerName`, `displayPeerName`,
+  `MAX_NAME_LENGTH`, and `FALLBACK_NAME`.
 - `exportDocumentStream` and `exportDocumentStreamAsHost` in `agentic-realtime/sdk`
   yield the export one record at a time, as the response arrives. Use them for a
   large history. `exportDocument` and `exportDocumentAsHost` keep their return
   value, and they still hold the whole export in memory.
+
+### Changed
+
+- The client converts its own peer name to Unicode NFC before it checks the name.
+- In the CLI, `snapshot` and `restore` take `--name` as the snapshot name, not
+  as a peer label. Those two commands label the peer `agentic-realtime cli`, so
+  a valid snapshot name no longer fails the peer name check.
+
+### Tests
+
+- A closing socket cannot write is also checked over a raw socket. This is a
+  test change only, with no API change.
 
 ## 0.2.0
 

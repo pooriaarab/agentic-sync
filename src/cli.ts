@@ -66,7 +66,7 @@ Set AGENTIC_SYNC_URL and AGENTIC_SYNC_TOKEN. The token stays off the command lin
   presence [--wait <ms>]       List the other peers.
   blame --root <r> [--snapshot <n>]   Print each run of text with the principal that wrote it.
 
-Other flags: --server <url>, --name <label for peers>. The server sets your kind from the token.`;
+Other flags: --server <url>, --name <label for peers; the snapshot name for snapshot and restore>. The server sets your kind from the token.`;
 
 // `--name` is a snapshot name for these commands, so it is not a peer name.
 function peerName(sub: string | undefined, name: string | undefined): string {
