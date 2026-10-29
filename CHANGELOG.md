@@ -5,8 +5,8 @@
 ### Changed
 
 - Breaking for ids outside the rule. A principal id must match the
-  `agentic-identity` rule: 1 to 128 characters, first a letter, digit, `_` or
-  `-`, then letters, digits, `.`, `_` or `-`. Before, any id of up to 256
+  `agentic-identity` rule: 1 to 128 ASCII characters, first an ASCII letter,
+  digit, `_` or `-`, then ASCII letters, digits, `.`, `_` or `-`. Before, any id of up to 256
   characters passed. A grant with another id fails with HTTP 500. The admin
   routes (revoke and role) and the caps refuse it with `INVALID_PRINCIPAL_ID`.
 - Before you upgrade, map your ids to the rule in `authorize`. Lift every cap

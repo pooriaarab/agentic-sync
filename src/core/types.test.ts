@@ -27,6 +27,11 @@ describe("assertGrant refuses a bad principal or grant", () => {
   });
 });
 
+// The public kind list. A change upstream must fail here, not reach a host.
+test("PRINCIPAL_KINDS is the five kinds the README documents", () => {
+  expect([...PRINCIPAL_KINDS]).toEqual(["human", "agent_of_human", "agent_of_agent", "agent", "user_token"]);
+});
+
 describe("isPrincipalId uses the grant rule for an id alone", () => {
   test.each([["ana"], ["agent-7"], ["a".repeat(128)]])("accepts %s", (id) => {
     expect(isPrincipalId(id)).toBe(true);
