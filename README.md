@@ -101,8 +101,12 @@ await setPrincipalRole(host, "notes", "person-1", null); // lifts the cap or the
 A cap only narrows. The principal gets the narrower of the grant and the cap.
 A revoked principal gets `403 ACCESS_REVOKED` on every route, also for
 snapshots, until the host lifts the revoke. The cap lives in the document's
-storage. One document holds up to 1000 caps. Without a valid secret, the admin
-routes answer `503 ADMIN_DISABLED`. A Worker of your own can call the same
+storage. A cap is keyed by principal id, so keep ids unique across kinds. A
+principal id is at most 256 characters. One document holds up to 1000 caps.
+When it is full, a revoke still closes the sockets, but it answers `409
+CAP_LIMIT` because no ban is stored. Lift old caps, then revoke again. A cap
+of `owner` narrows nothing, so the server drops it. Without a valid secret,
+the admin routes answer `503 ADMIN_DISABLED`. A Worker of your own can call the same
 methods through the `Realtime` port, or by Durable Object RPC on `SyncRoom`.
 
 **Timer.** Export a room class that knows how to ask your host:
@@ -117,9 +121,11 @@ export const SyncRoom = createSyncRoom({
 ```
 
 Every 60 seconds (set `SYNC_REAUTH_INTERVAL_SECONDS`, 1 to 3600) the room asks
-once for each connected principal. It applies a new role to all sockets of that
-principal. A `null`, a throw, or an unknown role closes them with code 4003. A
-host outage therefore ends the sessions. It does not keep them open.
+once for each connected principal, up to 20 calls at a time, each with a 5
+second limit. The new role can only narrow the role granted at connect, so the
+timer never widens access. It applies to all sockets of that principal. A `null`,
+a throw, a timeout, or an unknown role closes them with code 4003. A host outage
+therefore ends the sessions. It does not keep them open.
 
 ## Join a document from Node
 
@@ -235,7 +241,9 @@ TypeScript with no Cloudflare code.
 - The server stores the author of each update. After compaction it keeps the
   set of all authors, not the author of each single update.
 - Revocation by the host call is immediate. Revocation by the timer takes up to
-  one interval. Without `createSyncRoom`, there is no timer.
+  one interval. Without `createSyncRoom`, there is no timer. A room with open
+  sockets from before you deployed `createSyncRoom` starts its timer at the next
+  connection.
 - A client with `reconnect` keeps retrying after code 4003 and gets 403 each
   time, with growing delays. Stop it in your UI when you revoke.
 - The local `wrangler dev` cannot place objects in a jurisdiction. Test

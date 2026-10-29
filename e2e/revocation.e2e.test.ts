@@ -157,4 +157,28 @@ describe("live revocation under wrangler dev", () => {
     await until(() => code() !== undefined, "the outage to close the socket");
     expect(code()).toBe(4003);
   });
+
+  test("the timer never gives a socket more than its grant", async () => {
+    directory.set("person-3", "owner");
+    const viewer = await join(polled, "ceiling", "viewer");
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    await viewer.edit((doc) => doc.getText("body").insert(0, "x"));
+    expect(viewer.denied).toEqual(["read-only role"]);
+  });
+
+  test("a revoke closes the sockets even when the cap table is full", async () => {
+    const peer = new Peer(wsUrl(server, "capfull", "editor"));
+    await peer.synced;
+    const code = closeCodeOf(peer);
+    const fill = Array.from({ length: 1000 }, (_, i) => `filler-${i}`);
+    for (let i = 0; i < fill.length; i += 50) {
+      await Promise.all(
+        fill.slice(i, i + 50).map((id) => setPrincipalRole(admin(server), "capfull", id, "viewer")),
+      );
+    }
+    await expect(setPrincipalRole(admin(server), "capfull", "one-more", "viewer")).rejects.toThrow("CAP_LIMIT");
+    await expect(revokePrincipal(admin(server), "capfull", "person-1")).rejects.toThrow("CAP_LIMIT");
+    await until(() => code() !== undefined, "the socket to close");
+    expect(code()).toBe(4003);
+  });
 });

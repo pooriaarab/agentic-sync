@@ -8,6 +8,7 @@ import {
   assertGrant,
   canWrite,
   DOC_ID_PATTERN,
+  MAX_PRINCIPAL_ID_LENGTH,
   ROLES,
   SNAPSHOT_NAME_PATTERN,
   type Authorize,
@@ -38,10 +39,12 @@ const refused = (status: number, code: string): Response =>
   Response.json({ error: { code } }, { status });
 
 const validPrincipalId = (value: unknown): value is string =>
-  typeof value === "string" && value.length > 0 && value.length <= 256;
+  typeof value === "string" && value.length > 0 && value.length <= MAX_PRINCIPAL_ID_LENGTH;
 
 const realtimeFor = (env: SyncEnv) =>
   createDurableObjectRealtime(env.SYNC_ROOM, parseJurisdiction(env.SYNC_JURISDICTION));
+
+let warnedAdminOff = false;
 
 // Null when the caller holds the host secret.
 async function denyUnlessAdmin(request: Request, env: SyncEnv): Promise<Response | null> {
@@ -49,7 +52,8 @@ async function denyUnlessAdmin(request: Request, env: SyncEnv): Promise<Response
   try {
     secret = assertAdminSecret(env.SYNC_ADMIN_SECRET);
   } catch (error) {
-    console.error((error as Error).message);
+    if (!warnedAdminOff) console.error((error as Error).message);
+    warnedAdminOff = true;
     return refused(503, "ADMIN_DISABLED");
   }
   const given = request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
@@ -129,8 +133,9 @@ export function createSyncWorker(options: SyncWorkerOptions): ExportedHandler<Sy
     if (!DOC_ID_PATTERN.test(id)) return refused(400, "INVALID_DOC_ID");
     const body = (await c.req.json().catch(() => null)) as { principalId?: unknown } | null;
     if (!validPrincipalId(body?.principalId)) return refused(400, "INVALID_PRINCIPAL_ID");
-    const closed = await realtimeFor(c.env).revoke(id, body.principalId);
-    return closed === null ? refused(409, "CAP_LIMIT") : c.json({ closed });
+    const { closed, stored } = await realtimeFor(c.env).revoke(id, body.principalId);
+    // The sockets are closed either way. Without a stored ban the principal can return.
+    return stored ? c.json({ closed }) : Response.json({ error: { code: "CAP_LIMIT" }, closed }, { status: 409 });
   });
 
   app.post("/api/v1/admin/docs/:id/role", async (c) => {

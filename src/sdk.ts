@@ -114,7 +114,7 @@ async function admin(target: AdminTarget, docId: string, action: "revoke" | "rol
     headers: { authorization: `Bearer ${target.secret}`, "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  const result = (await response.json()) as { error?: { code: string } };
+  const result = (await response.json().catch(() => ({}))) as { error?: { code: string } };
   if (!response.ok) throw new Error(`the server refused the request: ${result.error?.code ?? response.status}`);
   return result;
 }

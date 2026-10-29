@@ -20,6 +20,7 @@ import {
   effectiveRole,
   isMachineKind,
   MAX_CAPS,
+  MAX_PRINCIPAL_ID_LENGTH,
   MAX_SNAPSHOTS,
   ROLES,
   type Cap,
@@ -56,13 +57,27 @@ const CLOSE_REVOKED = 4003;
 const PRESENCE_FULL = "presence is full";
 const DEFAULT_REAUTH_SECONDS = 60;
 const MAX_REAUTH_SECONDS = 3600;
-const MAX_PRINCIPAL_ID_LENGTH = 256;
+// A slow host must not hold up the principals behind it.
+const HOST_TIMEOUT_MS = 5000;
+const HOST_CALLS_AT_ONCE = 20;
+
+function withTimeout<T>(work: T | Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("the host did not answer in time")), ms);
+    Promise.resolve(work).then(
+      (value) => (clearTimeout(timer), resolve(value)),
+      (error) => (clearTimeout(timer), reject(error)),
+    );
+  });
+}
 
 interface Attachment {
   grant: Grant;
   // Names this socket in the presence relay.
   socketId: string;
   awarenessIds: number[];
+  // The newest role the host gave on a timer check. It only narrows the grant.
+  reauthRole?: Role;
 }
 
 function ownerOf({ grant, socketId }: Attachment): Owner {
@@ -228,6 +243,9 @@ export class SyncRoom extends DurableObject<RoomEnv> {
       return Response.json([...all.values()].map((record) => this.withLabel(record)));
     }
     const { name: wanted, author } = (await request.json()) as { name: string; author: Principal };
+    // A cap may have landed since the Worker checked the role.
+    const held = effectiveRole("owner", this.caps.get(author.id));
+    if (held === null || !canWrite(held)) return new Response(null, { status: 403 });
     const taken = await storage.list({ prefix: "s:" });
     if (taken.has(`s:${wanted}`) || taken.size >= MAX_SNAPSHOTS) return new Response(null, { status: 409 });
     const state = Y.encodeStateAsUpdate(this.doc);
@@ -276,7 +294,7 @@ export class SyncRoom extends DurableObject<RoomEnv> {
     }
     const attachment = ws.deserializeAttachment() as Attachment;
     const { principal } = attachment.grant;
-    const role = this.capRole(attachment.grant);
+    const role = this.capRole(attachment.grant, attachment.reauthRole);
     if (role === null) {
       this.evict(ws, CLOSE_REVOKED, "access revoked");
       return;
@@ -342,15 +360,17 @@ export class SyncRoom extends DurableObject<RoomEnv> {
   }
 
   // The role after the host's cap, or null when the principal is revoked.
-  private capRole({ principal, role }: Grant): Role | null {
-    return effectiveRole(role, this.caps.get(principal.id));
+  private capRole({ principal, role }: Grant, reauthRole?: Role): Role | null {
+    const held = reauthRole === undefined ? role : effectiveRole(role, reauthRole);
+    return held === null ? null : effectiveRole(held, this.caps.get(principal.id));
   }
 
   private async setCap(principalId: string, cap: Cap | null): Promise<boolean> {
     if (principalId.length === 0 || principalId.length > MAX_PRINCIPAL_ID_LENGTH) {
       throw new TypeError("invalid principal id");
     }
-    if (cap === null) {
+    // A cap of owner never narrows anything, so it is the same as no cap.
+    if (cap === null || cap === "owner") {
       this.caps.delete(principalId);
       await this.ctx.storage.delete(`cap:${principalId}`);
       return true;
@@ -362,17 +382,18 @@ export class SyncRoom extends DurableObject<RoomEnv> {
   }
 
   // Closes every socket of the principal and refuses it from now on. Lift
-  // the ban with updateRole(id, null). Returns the number of sockets
-  // closed, or null when the document holds the most caps.
-  async revoke(principalId: string): Promise<number | null> {
-    if (!(await this.setCap(principalId, "revoked"))) return null;
+  // the ban with updateRole(id, null). The sockets close even when the
+  // document holds the most caps. Then `stored` is false and a new
+  // connection is not refused, so lift old caps and revoke again.
+  async revoke(principalId: string): Promise<{ closed: number; stored: boolean }> {
+    const stored = await this.setCap(principalId, "revoked");
     let closed = 0;
     for (const ws of this.ctx.getWebSockets()) {
       if ((ws.deserializeAttachment() as Attachment).grant.principal.id !== principalId) continue;
       this.evict(ws, CLOSE_REVOKED, "access revoked");
       closed += 1;
     }
-    return closed;
+    return { closed, stored };
   }
 
   // Caps the role of a principal. It applies to the next message on every
@@ -405,26 +426,33 @@ export class SyncRoom extends DurableObject<RoomEnv> {
       const key = `${principal.kind}:${principal.id}`;
       byPrincipal.set(key, [...(byPrincipal.get(key) ?? []), ws]);
     }
-    for (const sockets of byPrincipal.values()) {
-      const { principal } = (sockets[0].deserializeAttachment() as Attachment).grant;
-      let role: Role | null;
+    const env = this.env as RoomEnv & Record<string, unknown>;
+    const ask = async (principal: Principal): Promise<Role | null> => {
       try {
-        role = await reauthorize(principal, this.docId, this.env as RoomEnv & Record<string, unknown>);
+        const role = await withTimeout(reauthorize(principal, this.docId!, env), HOST_TIMEOUT_MS);
+        return role !== null && ROLES.includes(role) ? role : null;
       } catch {
-        role = null;
+        return null;
       }
-      if (role !== null && !ROLES.includes(role)) role = null;
-      for (const ws of sockets) {
-        // A host call may have closed this socket while we waited.
-        if (ws.readyState !== WebSocket.OPEN) continue;
-        if (role === null) {
-          this.evict(ws, CLOSE_REVOKED, "access revoked");
-          continue;
-        }
-        const attachment = ws.deserializeAttachment() as Attachment;
-        attachment.grant.role = role;
-        ws.serializeAttachment(attachment);
-      }
+    };
+    const groups = [...byPrincipal.values()];
+    for (let i = 0; i < groups.length; i += HOST_CALLS_AT_ONCE) {
+      await Promise.all(
+        groups.slice(i, i + HOST_CALLS_AT_ONCE).map(async (sockets) => {
+          const role = await ask((sockets[0].deserializeAttachment() as Attachment).grant.principal);
+          for (const ws of sockets) {
+            // A host call may have closed this socket while we waited.
+            if (ws.readyState !== WebSocket.OPEN) continue;
+            if (role === null) {
+              this.evict(ws, CLOSE_REVOKED, "access revoked");
+              continue;
+            }
+            const attachment = ws.deserializeAttachment() as Attachment;
+            attachment.reauthRole = role;
+            ws.serializeAttachment(attachment);
+          }
+        }),
+      );
     }
     if (this.ctx.getWebSockets().some((ws) => ws.readyState === WebSocket.OPEN)) {
       await this.ctx.storage.setAlarm(Date.now() + this.reauthMs);

@@ -31,6 +31,7 @@ export type Cap = Role | "revoked";
 // Everything a principal may do, after the host's cap. A cap that is not
 // a known value counts as revoked, so bad stored data denies access.
 export function effectiveRole(granted: Role, cap: unknown): Role | null {
+  if (!ROLES.includes(granted)) return null;
   if (cap === undefined) return granted;
   const capIndex = ROLES.indexOf(cap as Role);
   if (capIndex < 0) return null;
@@ -61,6 +62,7 @@ export interface SnapshotInfo {
   author: Contributor;
 }
 
+export const MAX_PRINCIPAL_ID_LENGTH = 256;
 export const SNAPSHOT_NAME_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
 export const MAX_SNAPSHOTS = 50;
 
@@ -75,9 +77,9 @@ export interface Realtime {
   // The saved state as a Yjs update, or null.
   getSnapshot(docId: string, name: string): Promise<Uint8Array | null>;
   // Closes every socket of the principal and refuses it from now on.
-  // Returns how many sockets closed, or null when the document holds the
-  // most caps.
-  revoke(docId: string, principalId: string): Promise<number | null>;
+  // The sockets close even when the document holds the most caps. Then
+  // `stored` is false and a new connection is not refused.
+  revoke(docId: string, principalId: string): Promise<{ closed: number; stored: boolean }>;
   // Caps the principal's role, also on sockets that are open now. A null
   // role lifts the cap. Returns false when the document holds the most caps.
   updateRole(docId: string, principalId: string, role: Role | null): Promise<boolean>;
@@ -104,6 +106,7 @@ export function assertGrant(value: unknown): Grant {
   if (
     typeof principal?.id !== "string" ||
     principal.id.length === 0 ||
+    principal.id.length > MAX_PRINCIPAL_ID_LENGTH ||
     !PRINCIPAL_KINDS.includes(principal.kind as PrincipalKind) ||
     !ROLES.includes(grant?.role as Role) ||
     (grant?.name !== undefined &&
