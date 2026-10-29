@@ -9,6 +9,7 @@ import {
   exportDocument,
   exportDocumentAsHost,
   revokePrincipal,
+  setPrincipalRole,
   type AdminTarget,
   type Target,
 } from "../src/sdk.js";
@@ -113,14 +114,17 @@ describe("export and delete, under wrangler dev", () => {
     const first = await startWorker({ SYNC_ADMIN_SECRET: SECRET });
     extra.push(first);
     await fill("erase", first);
-    await revokePrincipal(host(first), "erase", "agent-9");
+    // agent-7 holds the "agent" token, so this ban is the one the check below reads.
+    await revokePrincipal(host(first), "erase", "agent-7");
+    expect(await status("/api/v1/docs/erase", "agent", {}, first)).toBe(403);
     const watcher = new Peer(`${first.ws}/api/v1/docs/erase/ws?token=viewer`);
     await watcher.synced;
     let code: number | undefined;
     void watcher.closed.then((value) => (code = value));
 
     const result = await deleteDocument(target("editor2", first), "erase");
-    expect(result.sockets).toBeGreaterThanOrEqual(3);
+    // The revoked agent socket already closed, so the human and the watcher remain.
+    expect(result.sockets).toBeGreaterThanOrEqual(2);
     await until(() => code !== undefined, "the socket to close");
     expect(code).toBe(4004);
 
@@ -149,7 +153,21 @@ describe("export and delete, under wrangler dev", () => {
     const lines = await exportDocument(target("editor2", second), "erase");
     expect(lines.find((l) => l.type === "attribution")).toMatchObject({ authors: [AGENT] });
     expect(lines.filter((l) => l.type === "snapshot")).toEqual([]);
+    expect(lines.find((l) => l.type === "caps")).toMatchObject({ caps: [] });
   }, 240_000);
+
+  test("an export holds the caps and the bans", async () => {
+    await fill("caps");
+    await setPrincipalRole(host(), "caps", "person-1", "viewer");
+    await revokePrincipal(host(), "caps", "agent-7");
+    const lines = await exportDocument(target("editor2"), "caps");
+    const caps = lines.find((l) => l.type === "caps");
+    expect(caps).toMatchObject({ type: "caps" });
+    expect([...caps!.caps].sort((a: { principalId: string }, b: { principalId: string }) => a.principalId.localeCompare(b.principalId))).toEqual([
+      { principalId: "agent-7", cap: "revoked" },
+      { principalId: "person-1", cap: "viewer" },
+    ]);
+  });
 
   test("the host can delete a document too", async () => {
     await fill("by-host");

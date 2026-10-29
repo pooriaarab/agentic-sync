@@ -7,7 +7,7 @@
 
 Live edits for people and agents on one document, with offline support.
 
-> Status: 0.1.0 preview. Most features below have an end-to-end test.
+> Status: 0.2.0 preview. Most features below have an end-to-end test.
 > Hibernation, the no-outbound-calls rule, and EU placement do not.
 
 ## Install
@@ -217,9 +217,10 @@ export is JSON lines, one record each, sent as the room reads its storage:
 | `state` | `base64`: the whole document as one Yjs update. |
 | `roots` | Each root type as plain JSON. |
 | `authors` | Everyone who wrote, with a `machine` label. |
+| `caps` | The host's caps and bans: `principalId` and `cap`, a role or `revoked`. It can name principals who never wrote, and owners can read it. |
 | `attribution` | The log of who sent which content. |
 | `update` | One update that compaction has not folded yet: `seq`, `at`, `author`, `base64`. |
-| `snapshot` | A named snapshot: `name`, `at`, `author`, `base64`, and its `attribution`. |
+| `snapshot` | A named snapshot: `name`, `at`, `bytes`, `author`, `base64`, and its `attribution`. `base64` and `attribution` are `null` when the stored state or log is missing. |
 
 A delete closes every socket with code 4004. It removes the updates, the base, the
 snapshots, the attribution logs, the caps and bans, and the timer. The document id
@@ -275,10 +276,11 @@ order, so its reply to a new sync request proves it has all earlier updates.
 
 ## Swap the server
 
-The Worker talks to the server through the `Realtime` interface. It has five
-methods: `connect`, `meta`, `createSnapshot`, `listSnapshots`, and
-`getSnapshot`. The Cloudflare adapter implements it with Durable Objects.
-Another server, such as a Node Yjs server, could implement it. The wire
+The Worker talks to the server through the `Realtime` interface. It has eleven
+methods: `connect`, `meta`, `createSnapshot`, `listSnapshots`, `getSnapshot`,
+`revoke`, `updateRole`, `roleFor`, `erase`, `exportHistory`, and `attribution`.
+The Cloudflare adapter implements it with Durable Objects. Another server, such as
+a Node Yjs server, could implement it. See the changelog for what 0.2.0 added. The wire
 protocol helpers in `agentic-realtime` (`readMessage`, `AwarenessRelay`) are plain
 TypeScript with no Cloudflare code.
 

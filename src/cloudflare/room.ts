@@ -330,6 +330,8 @@ export class SyncRoom extends DurableObject<RoomEnv> {
   }
 
   webSocketMessage(ws: WebSocket, data: string | ArrayBuffer): void {
+    // A socket that is closing (an erase, a revoke, or a reauth) must not write.
+    if (ws.readyState !== WebSocket.OPEN) return;
     if (typeof data === "string" || data.byteLength > MAX_MESSAGE_BYTES) {
       ws.close(1009, "binary messages up to 1 MiB only");
       return;
@@ -464,6 +466,14 @@ export class SyncRoom extends DurableObject<RoomEnv> {
       yield line({ type: "state", base64: toBase64(Y.encodeStateAsUpdate(room.doc)) });
       yield line({ type: "roots", roots: readRoots(room.doc) });
       yield line({ type: "authors", authors: room.meta().contributors });
+      yield line({
+        type: "caps",
+        // A stored cap that is not a known value counts as revoked, as in access.
+        caps: [...room.caps].map(([principalId, cap]) => ({
+          principalId,
+          cap: cap === "revoked" || ROLES.includes(cap as Role) ? cap : "revoked",
+        })),
+      });
       yield line({ type: "attribution", ...room.attribution.labeled() });
       for (const [key, update] of await storage.list<UpdateRecord>({ prefix: "u:" })) {
         yield line({ type: "update", seq: key.slice(2), at: update.at, author: label(update.author), base64: toBase64(update.update) });
