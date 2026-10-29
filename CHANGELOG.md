@@ -2,8 +2,9 @@
 
 ## 0.4.3
 
-One MCP client config can break on upgrade. A config that passes an extra
-argument to the server now gets exit 2 and no server. Remove the argument.
+One MCP client config can break on upgrade. A config that passes any extra
+argument to the server no longer starts it. It gets exit 0 with help or
+version text, or exit 2, and no server. Remove the argument.
 Otherwise, upgrading from 0.4.2 needs no code change.
 
 ### Changed
