@@ -33,27 +33,47 @@ export function rootKind(doc: Y.Doc, root: string): Kind | "empty" {
 const copy = (value: unknown): unknown =>
   value instanceof Y.AbstractType ? (value as Y.Map<unknown>).clone() : value;
 
-const isPlain = (text: Y.Text): boolean =>
-  text.toDelta().every((op: { insert: unknown; attributes?: unknown }) => typeof op.insert === "string" && op.attributes === undefined);
+type Delta = { insert: string | object; attributes?: Record<string, unknown> };
 
-// Makes `text` hold what `target` holds. When neither has formatting, only
-// the part in the middle that differs changes, so the rest keeps its authors.
+// One UTF-16 unit of text, or one embed, with its formatting.
+interface Unit {
+  key: string;
+  op: Delta;
+  unit?: string;
+}
+
+function unitsOf(text: Y.Text): Unit[] {
+  return (text.toDelta() as Delta[]).flatMap((op) => {
+    const format = op.attributes === undefined ? "" : JSON.stringify(op.attributes);
+    if (typeof op.insert !== "string") return [{ key: `${format}|${JSON.stringify(op.insert)}`, op }];
+    return op.insert.split("").map((unit) => ({ key: `${format}|${unit}`, unit, op: { insert: unit, attributes: op.attributes } }));
+  });
+}
+
+// Makes `text` hold what `target` holds. Only the part in the middle that
+// differs changes, so the rest keeps its authors and its formatting.
 function rewriteText(text: Y.Text, target: Y.Text): void {
-  if (!isPlain(text) || !isPlain(target)) {
-    text.delete(0, text.length);
-    text.applyDelta(target.toDelta());
-    return;
-  }
-  const [now, then] = [text.toString(), target.toString()];
+  const [now, then] = [unitsOf(text), unitsOf(target)];
   let head = 0;
-  while (head < now.length && head < then.length && now[head] === then[head]) head++;
+  while (head < now.length && head < then.length && now[head].key === then[head].key) head++;
   // Never cut between the two halves of a surrogate pair.
-  if (head > 0 && (now.charCodeAt(head - 1) & 0xfc00) === 0xd800) head--;
+  if (head > 0 && ((now[head - 1].unit?.charCodeAt(0) ?? 0) & 0xfc00) === 0xd800) head--;
   let tail = 0;
-  while (tail < now.length - head && tail < then.length - head && now[now.length - 1 - tail] === then[then.length - 1 - tail]) tail++;
-  if (tail > 0 && (now.charCodeAt(now.length - tail) & 0xfc00) === 0xdc00) tail--;
-  text.delete(head, now.length - head - tail);
-  text.insert(head, then.slice(head, then.length - tail));
+  while (tail < now.length - head && tail < then.length - head && now[now.length - 1 - tail].key === then[then.length - 1 - tail].key) tail++;
+  if (tail > 0 && ((now[now.length - tail].unit?.charCodeAt(0) ?? 0) & 0xfc00) === 0xdc00) tail--;
+  const runs: Delta[] = [];
+  for (const { op } of then.slice(head, then.length - tail)) {
+    const last = runs[runs.length - 1];
+    const format = JSON.stringify(op.attributes);
+    if (last !== undefined && typeof last.insert === "string" && typeof op.insert === "string" && JSON.stringify(last.attributes) === format) {
+      last.insert += op.insert;
+    } else runs.push({ insert: op.insert, ...(op.attributes === undefined ? {} : { attributes: op.attributes }) });
+  }
+  text.applyDelta([
+    ...(head > 0 ? [{ retain: head }] : []),
+    ...(now.length - head - tail > 0 ? [{ delete: now.length - head - tail }] : []),
+    ...runs,
+  ]);
 }
 
 // Makes the live document hold the content of an older state, as one new

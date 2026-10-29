@@ -163,4 +163,32 @@ describe("who wrote what, under wrangler dev", () => {
       { text: " ok", author: HUMAN },
     ]);
   });
+
+  test("a restore keeps the authors of rich text, and its formatting", async () => {
+    const agent = await join(server, "rich", "agent");
+    await agent.edit((doc) => {
+      const body = doc.getText("body");
+      body.insert(0, "bot text ");
+      body.insert(9, "bold", { bold: true });
+    });
+    const person = await join(server, "rich", "editor");
+    await until(() => text(person) === "bot text bold", "the agent's text to arrive");
+    await person.snapshot("v1");
+    await append(person, "!");
+    await person.restore("v1");
+    expect(person.doc.getText("body").toDelta()).toEqual([
+      { insert: "bot text " },
+      { insert: "bold", attributes: { bold: true } },
+    ]);
+    expect(await blame(target(server, "viewer"), "rich", "body")).toEqual([{ text: "bot text bold", author: AGENT }]);
+  });
+
+  test("an author who only deletes owns no range and is not listed", async () => {
+    const agent = await join(server, "deleter", "agent");
+    await append(agent, "x");
+    const person = await join(server, "deleter", "editor");
+    await until(() => text(person) === "x", "the agent's text to arrive");
+    await person.edit((doc) => doc.getText("body").delete(0, 1));
+    expect((await getAttribution(target(server, "viewer"), "deleter")).authors).toEqual([AGENT]);
+  });
 });

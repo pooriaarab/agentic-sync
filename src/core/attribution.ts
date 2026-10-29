@@ -2,8 +2,12 @@ import * as Y from "yjs";
 import { isMachineKind, PRINCIPAL_KINDS, type Contributor, type Principal } from "./types.js";
 
 export const DEFAULT_MAX_RANGES = 4000;
-// More ranges could push the saved log past the 2 MiB storage value limit.
 export const LARGEST_MAX_RANGES = 5000;
+// The saved log must stay under the 2 MiB storage value limit. This is an
+// estimate that takes two bytes for each character of an id.
+const MAX_LOG_BYTES = 1_500_000;
+const RANGE_BYTES = 120;
+const authorBytes = (author: Principal) => 2 * author.id.length + 40;
 
 // Yjs names every piece of content by (client id, clock). A range is a
 // run of those names that one principal sent.
@@ -35,6 +39,7 @@ export class AttributionLog {
   private ranges: AttributionRange[] = [];
   private dropped = 0;
   private lost = false;
+  private authorsBytes = 0;
   private newest = new Map<number, AttributionRange>();
 
   constructor(private readonly maxRanges = DEFAULT_MAX_RANGES) {}
@@ -63,6 +68,7 @@ export class AttributionLog {
     }
     log.dropped = dropped;
     log.lost = lost === true;
+    log.authorsBytes = log.authors.reduce((sum, author) => sum + authorBytes(author), 0);
     log.reindex();
     return log;
   }
@@ -97,7 +103,14 @@ export class AttributionLog {
   // Notes that `author` sent every struct in `update`.
   record(update: Uint8Array, author: Principal, at: number): void {
     let index = this.indexOf(author);
-    if (index < 0) index = this.authors.push({ id: author.id, kind: author.kind }) - 1;
+    // An author joins the log with its first range, so an update that only deletes adds none.
+    const take = () => {
+      if (index < 0) {
+        index = this.authors.push({ id: author.id, kind: author.kind }) - 1;
+        this.authorsBytes += authorBytes(author);
+      }
+      return index;
+    };
     for (const struct of AttributionLog.structsOf(update)) {
       const { client, clock } = struct.id;
       const last = this.newest.get(client);
@@ -106,25 +119,38 @@ export class AttributionLog {
         last.at = at;
         continue;
       }
-      const range = { client, clock, length: struct.length, author: index, at };
+      const range = { client, clock, length: struct.length, author: take(), at };
       this.ranges.push(range);
       this.newest.set(client, range);
     }
-    const over = this.ranges.length - this.maxRanges;
-    if (over > 0) {
-      // Drop a tenth more than needed, so a full log does not shift on every update.
-      const drop = Math.min(this.ranges.length, over + Math.floor(this.maxRanges / 10));
-      this.ranges.splice(0, drop);
-      this.dropped += drop;
+    this.trim();
+  }
+
+  private estimate(): number {
+    return this.ranges.length * RANGE_BYTES + this.authorsBytes;
+  }
+
+  // Drops the oldest ranges while the log has too many, or is too big to save.
+  // It drops a tenth more than needed, so a full log does not shift on every update.
+  private trim(): void {
+    let changed = false;
+    while (this.ranges.length > this.maxRanges || (this.estimate() > MAX_LOG_BYTES && this.ranges.length > 0)) {
+      const over = this.ranges.length - this.maxRanges;
+      const batch = over > 0 ? over + Math.floor(this.maxRanges / 10) : Math.ceil(this.ranges.length / 10);
+      const step = Math.min(this.ranges.length, batch);
+      this.ranges.splice(0, step);
+      this.dropped += step;
       this.forgetUnusedAuthors();
-      this.reindex();
+      changed = true;
     }
+    if (changed) this.reindex();
   }
 
   private forgetUnusedAuthors(): void {
     const used = [...new Set(this.ranges.map((range) => range.author))].sort((a, b) => a - b);
     const moved = new Map(used.map((old, next) => [old, next]));
     this.authors = used.map((old) => this.authors[old]);
+    this.authorsBytes = this.authors.reduce((sum, author) => sum + authorBytes(author), 0);
     for (const range of this.ranges) range.author = moved.get(range.author)!;
   }
 

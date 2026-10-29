@@ -267,17 +267,19 @@ TypeScript with no Cloudflare code.
 - Presence lives in memory. After a hibernation the server forgets it until the
   clients send their next heartbeat, within about 15 seconds.
 - The attribution log keeps up to 4000 ranges (set `SYNC_ATTRIBUTION_MAX_RANGES`,
-  4 to 5000). Each new client id starts a range, so a client that reconnects
+  4 to 5000), and also stays under about 1.5 MB with the ids of its authors. Each new client id starts a range, so a client that reconnects
   often uses them fast. Past the limit the oldest ranges go, `dropped` counts
   them, and their text shows as unattributed. The log is not a signed record.
-- A restore touches only the part of a text root that differs, so the rest keeps
-  its authors. Text that a restore brings back is new text by the person who
-  restored it. An undo that brings back deleted text does the same. Rich text
-  with formatting is replaced whole, and its authors become the restorer.
+- A restore touches only the part of a text root that differs, formatting
+  included, so the rest keeps its authors. Text that a restore brings back is
+  new text by the person who restored it. An undo that brings back deleted
+  text does the same.
 - Yjs holds an update that needs missing content, and applies it inside the next
   update. The room refuses such an update and closes the socket with code 1008.
   It also refuses an update that writes under the client id of another principal.
-  This check forgets a client id once the size limit drops its ranges.
+  This check forgets a client id once the size limit drops its ranges. A client
+  that keeps its `Y.Doc` and signs in as another principal writes under the old
+  client id, so the room refuses it. Make a new `Y.Doc` when the principal changes.
 - `lost: true` in the log means the saved log was damaged. The document still
   loads. Text from before the damage has no author.
 - The log names who sent an insert. It does not name who deleted. It covers text

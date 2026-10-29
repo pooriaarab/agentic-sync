@@ -347,16 +347,11 @@ export class SyncRoom extends DurableObject<RoomEnv> {
               : null,
       });
     } catch {
+      this.dropHeldUpdates();
       ws.close(1007, "malformed message");
       return;
     }
-    // Yjs keeps an update that needs missing content and applies it inside the
-    // next update, under that update's sender. Drop it, or the next sender
-    // would get the name on text it did not write.
-    const { store } = this.doc;
-    if (store.pendingStructs !== null || store.pendingDs !== null) {
-      store.pendingStructs = null;
-      store.pendingDs = null;
+    if (this.dropHeldUpdates()) {
       ws.close(1008, "update needs content the room does not have");
       return;
     }
@@ -394,6 +389,17 @@ export class SyncRoom extends DurableObject<RoomEnv> {
       (peer) => (peer.deserializeAttachment() as Attachment).socketId === socketId,
     );
     if (old !== undefined) this.evict(old, CLOSE_REPLACED, "client id taken over by a new connection");
+  }
+
+  // Yjs keeps an update that needs missing content and applies it inside the
+  // next update, under that update's sender. Drop it, or the next sender
+  // would get the name on text it did not write. True if one was held.
+  private dropHeldUpdates(): boolean {
+    const { store } = this.doc;
+    const held = store.pendingStructs !== null || store.pendingDs !== null;
+    store.pendingStructs = null;
+    store.pendingDs = null;
+    return held;
   }
 
   // Drops the socket's presence and closes it.
