@@ -19,7 +19,13 @@ export function parseArgs(argv: string[]): CliRequest {
   const [first, ...rest] = argv;
   if (first === undefined || first === "--help" || first === "-h") return { command: "help", flags: {} };
   if (first === "--version" || first === "-V") return { command: "version", flags: {} };
-  if (first === "mcp") return { command: "mcp", flags: {} };
+  if (first === "mcp") {
+    // `mcp --help` and `mcp --version` must answer and exit, never start the server.
+    if (rest.some((a) => a === "--help" || a === "-h")) return { command: "help", flags: {} };
+    if (rest.some((a) => a === "--version" || a === "-V" || a === "-v")) return { command: "version", flags: {} };
+    if (rest.length > 0) throw new UsageError(`mcp takes no argument, got "${rest[0]}"`);
+    return { command: "mcp", flags: {} };
+  }
   if (first !== "doc") throw new UsageError(`unknown command "${first}"`);
   const sub = rest.shift();
   if (sub === undefined || !SUBCOMMANDS.includes(sub)) {
