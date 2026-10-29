@@ -2,18 +2,22 @@
 
 ## 0.3.0
 
-Read the breaking changes before you upgrade. A client that sends a peer name
-with a character outside the safe set must change that name.
+Read the breaking changes before you upgrade. Check each `--name` and
+`AGENTIC_SYNC_NAME` value first. A peer name must start with a letter or a
+digit, have 40 characters or fewer, and have no leading, trailing, or double
+space.
 
 ### Breaking
 
 - Peer names use a closed character set, with a 40 character cap. The set is
   letters, digits, marks, spaces, and `. _ ' ’ ( ) -`. Emoji and `@` are out.
   The client now throws for another name: change `--name` and
-  `AGENTIC_SYNC_NAME` values that use them. The server drops an unsafe name
-  from the presence it relays and keeps the socket, so older clients keep
-  working. A host name from `authorize` follows the same set: peers show
-  `Unknown` for another one.
+  `AGENTIC_SYNC_NAME` values that use them. A name must also start with a
+  letter or a digit, have no leading, trailing, or double space, and have at
+  most 3 combining marks in a row. Invisible characters are out. The server
+  drops an unsafe name from the presence it relays and keeps the socket, so
+  older clients keep working. A host name from `authorize` follows the same
+  set: peers show `Unknown` for another one.
 - Peer colors that are not `#rrggbb`, or that are hard to see, are replaced.
   This includes CSS color names and the 0.2.0 default color, which was an
   `hsl(...)` string. A peer shows a different color after you upgrade. To keep
@@ -41,8 +45,6 @@ with a character outside the safe set must change that name.
 
 ### Changed
 
-- Peer colors are `#rrggbb` and pass WCAG 2.2 AA contrast. `client.peers`
-  replaces a color that is not `#rrggbb` or is hard to see.
 - The client converts its own peer name to Unicode NFC before it checks the name.
 - In the CLI, `snapshot` and `restore` take `--name` as the snapshot name, not
   as a peer label. Those two commands label the peer `agentic-realtime cli`, so
