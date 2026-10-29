@@ -54,8 +54,11 @@ describe("a socket that is closing", () => {
         url: `${server.ws}/api/v1/docs/closing/ws?token=editor`,
         timeoutMs: 3000,
       });
-      await marker.edit((doc) => doc.getText("body").insert(0, "marker"));
-      await marker.disconnect();
+      try {
+        await marker.edit((doc) => doc.getText("body").insert(0, "marker"));
+      } finally {
+        await marker.disconnect();
+      }
       await until(async () => (await bodyText()).includes("marker"), "the marker to be stored");
       // A late write would land on a later check, so look a few more times.
       for (let i = 0; i < 5; i++) {

@@ -5,10 +5,6 @@ import { connect, type Socket } from "node:net";
 const ACCEPT_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 const HANDSHAKE_MS = 5000;
 
-// A WebSocket client that writes frames and never reads them. It never
-// answers a close frame, so the server sees a socket that is closing and
-// still open at the TCP level. A stock client would answer the close at
-// once, and the window would close before the test could use it.
 // The accept key from the response headers. Header names are case-blind,
 // and a space after the colon is optional.
 function acceptOf(head: string): string | undefined {
@@ -16,6 +12,10 @@ function acceptOf(head: string): string | undefined {
   return line?.slice(line.indexOf(":") + 1).trim();
 }
 
+// A WebSocket client that writes frames and never reads them. It never
+// answers a close frame, so the server sees a socket that is closing and
+// still open at the TCP level. A stock client would answer the close at
+// once, and the window would close before the test could use it.
 export class RawSocket {
   private constructor(private readonly socket: Socket) {}
 
