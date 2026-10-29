@@ -8,6 +8,8 @@ import { createFakeFirestore } from "./fake.js";
 // A project id names one dataset there, so `shared` maps to a project. Without it,
 // a fake of the REST surface runs.
 const emulator = process.env.FIRESTORE_EMULATOR_HOST;
+// CI sets REQUIRE_FIRESTORE_EMULATOR so a missing emulator fails the run instead of using the fake.
+if (process.env.REQUIRE_FIRESTORE_EMULATOR === "1" && !emulator) throw new Error("REQUIRE_FIRESTORE_EMULATOR is set but FIRESTORE_EMULATOR_HOST is not");
 const fakes = new Map<string, ReturnType<typeof createFakeFirestore>>();
 const projectFor = (shared: string) => `t${shared.replace(/-/g, "").slice(0, 20)}`;
 
