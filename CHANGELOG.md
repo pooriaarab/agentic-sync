@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Presence can carry an away state: `active`, `idle`, or `hidden`. Pass the new
+  `away: { idleAfterSeconds }` option. Every `Peer` has an `away` field that is
+  `unknown` when the peer reports none. New exports: `AwayTracker`,
+  `AwayState`, `isAwayState`, `readAwayState`, `AWAY_STATES`, `watchPageAway`
+  (browser), and `stopWatching` on the result of `openDocument`.
 - Peer colors are `#rrggbb` and pass WCAG 2.2 AA contrast. The default color
   has 3:1 on a white page and on a `#121212` page. `peerColor` also gives 4.5:1
   text colors for one page. `client.peers` replaces a color that is not

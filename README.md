@@ -176,6 +176,14 @@ a name to NFC). The server drops an unsafe name from the presence it relays,
 and peers show `Unknown`. The socket stays open. The set does not stop
 look-alike letters from other scripts. Show a name in an isolated run
 (`<bdi>` or `dir="auto"`), because right-to-left letters are allowed. Check a name with `isSafePeerName`. Use any Yjs document type on `client.doc`.
+
+Pass `away: { idleAfterSeconds: 120 }` with `presence` to tell peers if you are
+`active`, `idle`, or `hidden`. Call `client.markActive()` on input and
+`client.setHidden(true | false)` when the page hides or shows. In a browser,
+`watchPageAway(client)` does both, and `openDocument` calls it when you pass
+`away`. A hidden page reads as `hidden`, not `idle`. A peer that reports no state,
+such as an agent, has `away: "unknown"` in `client.peers` and in the SDK's
+`listPeers`. The server drops a state that is not one of the three.
 The client needs Node 22 or later. It reconnects only if you pass `reconnect: {}`.
 
 ## Use the CLI
