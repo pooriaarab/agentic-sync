@@ -169,8 +169,10 @@ page. No single color has 4.5:1 on both. `client.peers` keeps a peer's color onl
 if it is `#rrggbb` with 3:1 on both pages. Otherwise it uses the peer's default. You do not set a `kind`. The server
 adds the `kind` of your grant to your presence, so people always see an agent
 as an agent. Each peer in `client.peers` carries that `kind`, and `machine` is
-true for every kind except a person. A name has 1 to 40 letters, digits, spaces,
-`’`, or `. _ ' ( ) -`. It has no bidi controls, zero-width characters, or other
+true for every kind except a person. A name has 1 to 40 characters. It starts
+with a letter or a digit. It has only letters, digits, marks, single spaces, and
+`’ . _ ' ( ) -`. It has no leading, trailing, or double space, and no run of more
+than 3 combining marks. It has no bidi controls, zero-width characters, or other
 invisible characters. The client throws for any other name (it first converts
 a name to NFC). The server drops an unsafe name from the presence it relays,
 and peers show `Unknown`. The socket stays open. The set does not stop
