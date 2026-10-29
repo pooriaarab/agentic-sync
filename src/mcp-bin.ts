@@ -2,7 +2,7 @@
 import { VERSION } from "./version.js";
 
 const HELP = `agentic-realtime-mcp ${VERSION}
-Usage: agentic-realtime-mcp [--help | --version]
+Usage: agentic-realtime-mcp [-h | --help | -V | -v | --version]
 
 Runs the MCP server on stdio. An MCP client starts it.
 `;
