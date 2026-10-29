@@ -57,7 +57,11 @@ describe("a socket that is closing", () => {
       await marker.edit((doc) => doc.getText("body").insert(0, "marker"));
       await marker.disconnect();
       await until(async () => (await bodyText()).includes("marker"), "the marker to be stored");
-      expect(await bodyText()).toBe("marker");
+      // A late write would land on a later check, so look a few more times.
+      for (let i = 0; i < 5; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(await bodyText()).toBe("marker");
+      }
     } finally {
       late.destroy();
     }

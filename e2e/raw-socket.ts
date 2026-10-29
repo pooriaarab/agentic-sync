@@ -9,6 +9,13 @@ const HANDSHAKE_MS = 5000;
 // answers a close frame, so the server sees a socket that is closing and
 // still open at the TCP level. A stock client would answer the close at
 // once, and the window would close before the test could use it.
+// The accept key from the response headers. Header names are case-blind,
+// and a space after the colon is optional.
+function acceptOf(head: string): string | undefined {
+  const line = head.split("\r\n").find((text) => /^sec-websocket-accept:/i.test(text));
+  return line?.slice(line.indexOf(":") + 1).trim();
+}
+
 export class RawSocket {
   private constructor(private readonly socket: Socket) {}
 
@@ -46,7 +53,7 @@ export class RawSocket {
         socket.on("data", () => {});
         if (!head.startsWith("HTTP/1.1 101")) {
           fail(new Error(`the upgrade was refused: ${head.split("\r\n")[0]}`));
-        } else if (!head.includes(`Sec-WebSocket-Accept: ${accept}\r\n`)) {
+        } else if (acceptOf(head) !== accept) {
           fail(new Error("the upgrade has a wrong accept key"));
         } else {
           resolve(new RawSocket(socket));
