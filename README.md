@@ -143,7 +143,7 @@ A cap only narrows. The principal gets the narrower of the grant and the cap.
 A revoked principal gets `403 ACCESS_REVOKED` on every route, also for
 snapshots, until the host lifts the revoke. The cap lives in the document's
 storage. A cap is keyed by principal id, so keep ids unique across kinds. A
-principal id is at most 256 characters. One document holds up to 1000 role caps and
+principal id matches the `agentic-identity` rule: 1 to 128 characters, first a letter, digit, `_` or `-`, then letters, digits, `.`, `_` or `-`. One document holds up to 1000 role caps and
 up to 10000 bans, counted apart, so a full table of role caps never stops a
 revoke. Past the ban limit, a revoke still closes the sockets, but it answers
 `409 CAP_LIMIT` because no ban is stored. A cap of `owner` narrows nothing,

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- `PRINCIPAL_KINDS` and the principal check in `assertGrant` come from
+  `agentic-identity`. The exports keep their names and types.
+- A principal id must match the `agentic-identity` rule: 1 to 128 characters,
+  first a letter, digit, `_` or `-`, then letters, digits, `.`, `_` or `-`.
+  Before, any id of up to 256 characters passed. An id that breaks the rule now
+  fails the grant with HTTP 500, as a bad grant did before.
+
 ## 0.4.1
 
 No breaking changes. Upgrading from 0.4.0 needs no code change.

@@ -1,13 +1,8 @@
+import { parsePrincipal, type PrincipalKind } from "agentic-identity";
 import type { Attribution } from "./attribution.js";
 
-export const PRINCIPAL_KINDS = [
-  "human",
-  "agent_of_human",
-  "agent_of_agent",
-  "agent",
-  "user_token",
-] as const;
-export type PrincipalKind = (typeof PRINCIPAL_KINDS)[number];
+export { PRINCIPAL_KINDS } from "agentic-identity";
+export type { PrincipalKind } from "agentic-identity";
 
 export const ROLES = ["owner", "editor", "commenter", "viewer"] as const;
 export type Role = (typeof ROLES)[number];
@@ -117,12 +112,13 @@ export function isMachineKind(kind: PrincipalKind): boolean {
 
 export function assertGrant(value: unknown): Grant {
   const grant = value as Partial<Grant> | null;
-  const principal = grant?.principal;
+  let principal: Principal;
+  try {
+    principal = parsePrincipal(grant?.principal);
+  } catch {
+    throw new Error("authorize returned an invalid grant");
+  }
   if (
-    typeof principal?.id !== "string" ||
-    principal.id.length === 0 ||
-    principal.id.length > MAX_PRINCIPAL_ID_LENGTH ||
-    !PRINCIPAL_KINDS.includes(principal.kind as PrincipalKind) ||
     !ROLES.includes(grant?.role as Role) ||
     (grant?.name !== undefined &&
       (typeof grant.name !== "string" || grant.name.length === 0 || grant.name.length > 128))
