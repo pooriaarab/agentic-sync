@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Peer colors are `#rrggbb` and pass WCAG 2.2 AA contrast. The default color
+  has 3:1 on a white page and on a `#121212` page. `peerColor` also gives 4.5:1
+  text colors for one page. `client.peers` replaces a color that is not
+  `#rrggbb` or is hard to see. New exports: `peerColor`, `safePeerColor`,
+  `contrastRatio`, `isHexColor`, and the contrast constants.
 - Peer names use a closed character set, with a 40 character cap. The set is
   letters, digits, marks, spaces, and `. _ ' ’ ( ) -`. Emoji and `@` are out.
   The client now throws for another name: change `--name` and

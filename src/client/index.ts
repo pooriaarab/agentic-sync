@@ -13,6 +13,7 @@ import {
   updateMessage,
 } from "../core/protocol.js";
 import { restoreState } from "../core/history.js";
+import { peerColor, safePeerColor } from "../core/colors.js";
 import { assertSafePeerName, displayPeerName } from "../core/names.js";
 import { isMachineKind, type PrincipalKind, type SnapshotInfo } from "../core/types.js";
 
@@ -59,12 +60,6 @@ interface Barrier {
   reject(error: Error): void;
 }
 
-function colorFor(name: string): string {
-  let hash = 0;
-  for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) % 360;
-  return `hsl(${hash} 70% 45%)`;
-}
-
 // A headless client for one document. It holds a Y.Doc that stays in step
 // with the server.
 export class SyncClient {
@@ -103,7 +98,7 @@ export class SyncClient {
     );
     if (options.presence) {
       const name = assertSafePeerName(options.presence.name);
-      const { color = colorFor(name), cursor = null } = options.presence;
+      const { color = peerColor(name), cursor = null } = options.presence;
       this.awareness.setLocalState({ name, color, cursor } satisfies Presence);
     }
     this.open();
@@ -246,7 +241,8 @@ export class SyncClient {
       .filter(([clientId]) => clientId !== this.doc.clientID)
       .map(([clientId, state]) => {
         const peer = state as Omit<Peer, "clientId" | "machine">;
-        return { clientId, ...peer, name: displayPeerName(peer.name), machine: isMachineKind(peer.kind) };
+        const name = displayPeerName(peer.name);
+        return { clientId, ...peer, name, color: safePeerColor(peer.color, name), machine: isMachineKind(peer.kind) };
       });
   }
 

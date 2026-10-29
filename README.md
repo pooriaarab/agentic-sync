@@ -162,7 +162,11 @@ await client.disconnect();
 resolve when the server has handled your changes. If your role is read-only,
 the server drops the edit and `client.denied` holds its reason.
 
-Your presence is `{ name, color, cursor }`. You do not set a `kind`. The server
+Your presence is `{ name, color, cursor }`. The default `color` comes from your
+name and has at least 3:1 contrast on a white page and on a dark page (`#121212`).
+`peerColor(name, "light" | "dark")` gives a color with 4.5:1 text contrast on one
+page. No single color has 4.5:1 on both. `client.peers` keeps a peer's color only
+if it is `#rrggbb` with 3:1 on both pages. Otherwise it uses the peer's default. You do not set a `kind`. The server
 adds the `kind` of your grant to your presence, so people always see an agent
 as an agent. Each peer in `client.peers` carries that `kind`, and `machine` is
 true for every kind except a person. A name has 1 to 40 letters, digits, spaces,
