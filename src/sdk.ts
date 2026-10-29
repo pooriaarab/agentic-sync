@@ -150,24 +150,65 @@ async function call(server: string, path: string, secret: string | undefined, in
   return response;
 }
 
-const lines = async (response: Response): Promise<ExportRecord[]> =>
-  (await response.text()).split("\n").filter(Boolean).map((line) => JSON.parse(line) as ExportRecord);
+// Reads a JSON-lines body as it arrives. A line can split across chunks, and
+// so can a multi-byte character, so the decoder keeps its state between chunks.
+async function* records(response: Response): AsyncGenerator<ExportRecord> {
+  if (response.body === null) return;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  // The unfinished line so far. Each chunk is searched only for its own
+  // newlines, so a long line costs time in proportion to its length.
+  let partial = "";
+  try {
+    for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+      const text = decoder.decode(chunk.value, { stream: true });
+      let from = 0;
+      for (let end = text.indexOf("\n"); end !== -1; end = text.indexOf("\n", from)) {
+        const line = partial + text.slice(from, end);
+        partial = "";
+        from = end + 1;
+        if (line !== "") yield JSON.parse(line) as ExportRecord;
+      }
+      partial += text.slice(from);
+    }
+    partial += decoder.decode();
+    if (partial !== "") yield JSON.parse(partial) as ExportRecord;
+  } finally {
+    // A caller that stops early must not leave the connection open.
+    await reader.cancel().catch(() => {});
+  }
+}
+
+const collect = async <T>(source: AsyncIterable<T>): Promise<T[]> => {
+  const all: T[] = [];
+  for await (const item of source) all.push(item);
+  return all;
+};
 
 const docPath = (docId: string) => `/api/v1/docs/${encodeURIComponent(docId)}`;
 const hostPath = (docId: string) => `/api/v1/admin/docs/${encodeURIComponent(docId)}`;
 const confirmation = (docId: string): RequestInit => ({ method: "DELETE", body: JSON.stringify({ confirm: docId }) });
 
-// Everything the room stores for a document, as records. Owners only.
-export const exportDocument = async (target: Target, docId: string) =>
-  lines(await call(target.server, `${docPath(docId)}/export`, target.token));
+// Everything the room stores for a document, as records, one at a time as
+// they arrive. Use this for a large history. Owners only.
+export async function* exportDocumentStream(target: Target, docId: string): AsyncGenerator<ExportRecord> {
+  yield* records(await call(target.server, `${docPath(docId)}/export`, target.token));
+}
+
+// The same records, all at once. This holds the whole export in memory.
+export const exportDocument = (target: Target, docId: string) => collect(exportDocumentStream(target, docId));
 
 // Deletes all data of a document and closes its sockets. Owners only. This cannot be undone.
 export const deleteDocument = async (target: Target, docId: string) =>
   (await (await call(target.server, docPath(docId), target.token, confirmation(docId))).json()) as { deleted: true; sockets: number };
 
 // The same two calls for the host, with the host secret. Keep it out of agents.
-export const exportDocumentAsHost = async (host: AdminTarget, docId: string) =>
-  lines(await call(host.server, `${hostPath(docId)}/export`, host.secret));
+export async function* exportDocumentStreamAsHost(host: AdminTarget, docId: string): AsyncGenerator<ExportRecord> {
+  yield* records(await call(host.server, `${hostPath(docId)}/export`, host.secret));
+}
+
+export const exportDocumentAsHost = (host: AdminTarget, docId: string) =>
+  collect(exportDocumentStreamAsHost(host, docId));
 
 export const deleteDocumentAsHost = async (host: AdminTarget, docId: string) =>
   (await (await call(host.server, hostPath(docId), host.secret, confirmation(docId))).json()) as {
