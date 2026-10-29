@@ -12,6 +12,7 @@ import {
   ROLES,
   SNAPSHOT_NAME_PATTERN,
   type Authorize,
+  type Realtime,
 } from "./core/types.js";
 
 export { assertGrant, ROLES } from "./core/types.js";
@@ -141,6 +142,28 @@ export function createSyncWorker(options: SyncWorkerOptions): ExportedHandler<Sy
     return log === null ? refused(404, "NOT_FOUND") : c.json(log);
   });
 
+  // Owners and the host may export and delete. A delete must name the document in its body.
+  const stream = async (realtime: Realtime, id: string) =>
+    new Response(await realtime.exportHistory(id), { headers: { "content-type": "application/x-ndjson" } });
+  const confirmed = async (request: Request, id: string) =>
+    ((await request.json().catch(() => null)) as { confirm?: unknown } | null)?.confirm === id;
+
+  app.get("/api/v1/docs/:id/export", async (c) => {
+    const id = c.req.param("id");
+    const opened = await open(c.req.raw, c.env, id);
+    if (opened instanceof Response) return opened;
+    return opened.grant.role === "owner" ? stream(opened.realtime, id) : refused(403, "OWNER_ONLY");
+  });
+
+  app.delete("/api/v1/docs/:id", async (c) => {
+    const id = c.req.param("id");
+    const opened = await open(c.req.raw, c.env, id);
+    if (opened instanceof Response) return opened;
+    if (opened.grant.role !== "owner") return refused(403, "OWNER_ONLY");
+    if (!(await confirmed(c.req.raw, id))) return refused(400, "CONFIRMATION_REQUIRED");
+    return c.json({ deleted: true, ...(await opened.realtime.erase(id)) });
+  });
+
   app.get("/api/v1/docs/:id/ws", async (c) => {
     if (c.req.header("upgrade") !== "websocket") return refused(426, "UPGRADE_REQUIRED");
     const id = c.req.param("id");
@@ -175,6 +198,22 @@ export function createSyncWorker(options: SyncWorkerOptions): ExportedHandler<Sy
     if (role !== null && !ROLES.includes(role as (typeof ROLES)[number])) return refused(400, "INVALID_ROLE");
     const stored = await realtimeFor(c.env).updateRole(id, body.principalId, role as (typeof ROLES)[number] | null);
     return stored ? c.json({ ok: true }) : refused(409, "CAP_LIMIT");
+  });
+
+  app.get("/api/v1/admin/docs/:id/export", async (c) => {
+    const denied = await denyUnlessAdmin(c.req.raw, c.env);
+    if (denied) return denied;
+    const id = c.req.param("id");
+    return DOC_ID_PATTERN.test(id) ? stream(realtimeFor(c.env), id) : refused(400, "INVALID_DOC_ID");
+  });
+
+  app.delete("/api/v1/admin/docs/:id", async (c) => {
+    const denied = await denyUnlessAdmin(c.req.raw, c.env);
+    if (denied) return denied;
+    const id = c.req.param("id");
+    if (!DOC_ID_PATTERN.test(id)) return refused(400, "INVALID_DOC_ID");
+    if (!(await confirmed(c.req.raw, id))) return refused(400, "CONFIRMATION_REQUIRED");
+    return c.json({ deleted: true, ...(await realtimeFor(c.env).erase(id)) });
   });
 
   app.notFound((c) => c.json({ error: { code: "NOT_FOUND" } }, 404));

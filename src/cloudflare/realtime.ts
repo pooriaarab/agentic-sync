@@ -52,6 +52,10 @@ export function createDurableObjectRealtime(
     updateRole: (docId: string, principalId: string, role: Role | null) =>
       room(docId).updateRole(principalId, role),
     roleFor: (docId: string, grant: Grant) => room(docId).roleFor(grant),
+    erase: (docId: string) => room(docId).erase(),
+    async exportHistory(docId: string) {
+      return (await room(docId).fetch("https://room.internal/export")).body!;
+    },
     async attribution(docId: string, snapshot?: string) {
       const path = snapshot === undefined ? "attribution" : `snapshots/${encodeURIComponent(snapshot)}/attribution`;
       const response = await room(docId).fetch(`https://room.internal/${path}`);

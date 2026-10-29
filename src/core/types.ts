@@ -91,6 +91,10 @@ export interface Realtime {
   updateRole(docId: string, principalId: string, role: Role | null): Promise<boolean>;
   // The principal's role after the cap, or null when it is revoked.
   roleFor(docId: string, grant: Grant): Promise<Role | null>;
+  // Deletes all data of the document, closes its sockets, and starts it empty.
+  erase(docId: string): Promise<{ sockets: number }>;
+  // Everything stored for the document, as lines of JSON.
+  exportHistory(docId: string): Promise<ReadableStream<Uint8Array>>;
   // Who sent which content, now or as of a named snapshot. Null when the
   // snapshot has no log.
   attribution(docId: string, snapshot?: string): Promise<Attribution | null>;

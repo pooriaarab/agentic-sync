@@ -17,7 +17,8 @@ connect and with what role.
 - `agentic-realtime` CLI and `agentic-realtime mcp`: `doc get|apply|snapshot|restore|presence|blame`.
 - `examples/host`: a runnable host with token sign-in. `npm run example`.
 - `agentic-realtime/sdk`: the same operations as functions, and the host calls
-  `revokePrincipal` and `setPrincipalRole`. Never put those in the CLI or MCP.
+  `revokePrincipal`, `setPrincipalRole`, `exportDocumentAsHost`, `deleteDocumentAsHost`, and
+  the owner calls `exportDocument` and `deleteDocument`. Never put those in the CLI or MCP.
   An agent must not hold the host secret.
 
 ## Rules

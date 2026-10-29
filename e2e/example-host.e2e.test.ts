@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -11,8 +11,12 @@ import { startWorker, until, type Server } from "./server.js";
 // The steps of examples/host/README.md, run against the real example Worker.
 // Each test Worker runs from a copy in a temp folder, so no test reads or writes the
 // .dev.vars that a reader made in examples/host. The copy points its alias at this build.
+// The folders go away after the run, because one holds secrets.
+const copies: string[] = [];
+
 function exampleCopy(devVars?: string): string {
   const dir = mkdtempSync(join(tmpdir(), "agentic-realtime-example-"));
+  copies.push(dir);
   copyFileSync("examples/host/worker.ts", join(dir, "worker.ts"));
   const config = readFileSync("examples/host/wrangler.jsonc", "utf8").replace("../../dist/worker.js", resolve("dist/worker.js"));
   writeFileSync(join(dir, "wrangler.jsonc"), config);
@@ -32,13 +36,13 @@ let server: Server;
 beforeAll(async () => {
   if (!existsSync("dist/cli.js")) throw new Error("run npm run build first");
   // The README says to put the secrets in .dev.vars, so this does the same.
-  // The README says to put the secrets in .dev.vars, so this does the same.
   const devVars = `HOST_TOKENS='${TOKENS}'\nSYNC_ADMIN_SECRET='${SECRET}'\n`;
   server = await startWorker({}, undefined, exampleCopy(devVars));
 }, 120_000);
 
 afterAll(async () => {
   await server?.stop();
+  for (const dir of copies) rmSync(dir, { recursive: true, force: true });
 });
 
 function cli(args: string[], token: string): Promise<{ code: number; out: string; err: string }> {
