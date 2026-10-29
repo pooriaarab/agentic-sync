@@ -2,12 +2,13 @@
 
 ## 0.4.4
 
-Upgrading from 0.4.3 needs no code change.
-
 ### Changed
 
 - The package depends on `agentic-identity` `^0.9.0`. It was `^0.7.0`. The
-  principal kinds and the principal id rule do not change.
+  principal kinds and the principal id rule do not change. The package needs no
+  code change.
+- A host that also pins `agentic-identity` to `^0.7.0` gets two copies of it.
+  Move the host's pin to `^0.9.0`.
 
 ## 0.4.3
 
