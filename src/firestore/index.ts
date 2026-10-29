@@ -6,7 +6,7 @@
 // the exact key and the value as JSON text (bytes as base64). A Firestore document
 // holds up to 1 MiB, so one value must stay under 1 MB. The adapter throws when it
 // does not, and never puts content in an error.
-import { assertText, decodeValue, encodeValue, type RoomStorage } from "../core/storage.js";
+import { MAX_PUT_ALL, assertPrefix, assertText, decodeValue, encodeValue, type RoomStorage } from "../core/storage.js";
 
 export interface FirestoreStorageOptions {
   projectId: string;
@@ -48,7 +48,7 @@ const base64Url = (text: string) => {
 };
 
 // The first string after every string with this prefix.
-function prefixEnd(prefix: string): string | null {
+export function prefixEnd(prefix: string): string | null {
   const points = [...prefix];
   while (points.length > 0) {
     const last = points.pop()!.codePointAt(0)!;
@@ -67,13 +67,18 @@ interface Row {
 
 export function createFirestoreStorage(options: FirestoreStorageOptions): RoomStorage {
   assertText(options.docId, "docId");
+  const safe = /^[A-Za-z0-9_.:()-]+$/;
+  for (const [what, value] of [["projectId", options.projectId], ["databaseId", options.databaseId ?? "(default)"], ["collection", options.collection ?? "agentic_realtime"]] as const) {
+    if (!safe.test(value)) throw new Error(`${what} has a character Firestore does not allow in a name`);
+  }
   const database = `projects/${options.projectId}/databases/${options.databaseId ?? "(default)"}`;
   const root = `${(options.baseUrl ?? "https://firestore.googleapis.com").replace(/\/+$/, "")}/v1/${database}/documents`;
   const parent = `${options.collection ?? "agentic_realtime"}/${base64Url(options.docId)}`;
 
-  async function call<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T | null> {
+  async function call<T>(method: "POST", path: string, body?: unknown): Promise<T | null> {
     const token = typeof options.token === "function" ? await options.token() : options.token;
-    const response = await options.fetch(`${root}/${path}`, {
+    // An operation such as ":commit" joins the documents path with no slash.
+    const response = await options.fetch(`${root}${path.startsWith(":") ? "" : "/"}${path}`, {
       method,
       headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), ...(body === undefined ? {} : { "content-type": "application/json" }) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -85,7 +90,6 @@ export function createFirestoreStorage(options: FirestoreStorageOptions): RoomSt
     } catch {
       // Not JSON: report the status only.
     }
-    if (response.status === 404 && method === "GET") return null;
     if (!response.ok) {
       const status = (parsed as { error?: { status?: unknown } } | null)?.error?.status;
       throw new FirestoreError(response.status, typeof status === "string" ? status : "UNKNOWN");
@@ -118,6 +122,7 @@ export function createFirestoreStorage(options: FirestoreStorageOptions): RoomSt
 
   async function list<T>(prefix: string): Promise<Map<string, T>> {
     const found = new Map<string, T>();
+    assertPrefix(prefix);
     const end = prefixEnd(prefix);
     const filters: object[] = [];
     if (prefix !== "") filters.push({ fieldFilter: { field: { fieldPath: "key" }, op: "GREATER_THAN_OR_EQUAL", value: { stringValue: prefix } } });
@@ -145,8 +150,15 @@ export function createFirestoreStorage(options: FirestoreStorageOptions): RoomSt
 
   return {
     async get<T>(key: string) {
-      const doc = await call<{ fields?: Record<string, { stringValue?: string }> }>("GET", `${parent}/kv/${idOf(key)}`);
-      return doc === null ? undefined : (read(doc.fields, key) as T);
+      // batchGet names a missing document. A bare 404 could also mean a wrong database, and must not read as "missing".
+      const rows = await call<{ found?: { fields?: Record<string, { stringValue?: string }> }; missing?: string }[]>("POST", ":batchGet", {
+        documents: [nameOf(key)],
+        mask: { fieldPaths: ["key", "value"] },
+      });
+      const row = rows?.[0];
+      if (row?.missing === nameOf(key)) return undefined;
+      if (row?.found === undefined) throw damaged();
+      return read(row.found.fields, key) as T;
     },
     list,
     async put(key, value) {
@@ -154,7 +166,7 @@ export function createFirestoreStorage(options: FirestoreStorageOptions): RoomSt
     },
     async putAll(entries) {
       const writes = Object.entries(entries).map(([key, value]) => writeOf(key, value));
-      if (writes.length > COMMIT_WRITES) throw new Error(`putAll takes up to ${COMMIT_WRITES} entries`);
+      if (writes.length > MAX_PUT_ALL) throw new Error(`putAll takes up to ${MAX_PUT_ALL} entries`);
       if (writes.length > 0) await commit(writes);
     },
     async delete(keys) {
@@ -162,7 +174,7 @@ export function createFirestoreStorage(options: FirestoreStorageOptions): RoomSt
       const writes = unique.map((key): Write => ({ delete: nameOf(key) }));
       let existed = 0;
       for (let i = 0; i < writes.length; i += BATCH_GET) {
-        const found = await call<{ found?: unknown }[]>("POST", ":batchGet", { documents: writes.slice(i, i + BATCH_GET).map((w) => w.delete) });
+        const found = await call<{ found?: unknown }[]>("POST", ":batchGet", { documents: writes.slice(i, i + BATCH_GET).map((w) => w.delete), mask: { fieldPaths: ["key"] } });
         existed += (found ?? []).filter((row) => row.found !== undefined).length;
       }
       for (let i = 0; i < writes.length; i += COMMIT_WRITES) await commit(writes.slice(i, i + COMMIT_WRITES));

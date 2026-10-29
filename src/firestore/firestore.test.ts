@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { runStorageContract } from "../core/storage.contract.js";
 import { exportStorage } from "../core/storage.js";
-import { createFirestoreStorage, FirestoreError, MAX_VALUE_BYTES } from "./index.js";
+import { createFirestoreStorage, FirestoreError, prefixEnd } from "./index.js";
 import { createFakeFirestore } from "./fake.js";
 
 // With FIRESTORE_EMULATOR_HOST set, the suite runs against the Firestore emulator.
@@ -77,4 +77,35 @@ it("makes no request except to the base url", async () => {
   const storage = createFirestoreStorage({ projectId: "p", docId: "d", fetch: fake.fetch, baseUrl: "http://localhost:8080/" });
   await storage.put("a", 1);
   expect(fake.requests.every((r) => r.url.startsWith("http://localhost:8080/v1/projects/p/"))).toBe(true);
+});
+
+it("sends a putAll as one commit, and pages with a cursor that skips the last row", async () => {
+  const fake = createFakeFirestore();
+  const storage = createFirestoreStorage({ projectId: "p", docId: "d", fetch: fake.fetch });
+  await storage.putAll(Object.fromEntries(Array.from({ length: 400 }, (_, i) => [`u:${i}`, i])));
+  expect(fake.requests.filter((r) => r.operation === ":commit")).toHaveLength(1);
+  expect((await storage.list("u:")).size).toBe(400);
+  const queries = fake.requests.filter((r) => r.operation === ":runQuery");
+  expect(queries).toHaveLength(2);
+  expect(queries.map((q) => q.startAtBefore)).toEqual([undefined, false]);
+});
+
+it("reads a 404 from the server as an error, not as a missing key", async () => {
+  const notFound = (async () => new Response(JSON.stringify({ error: { code: 404, status: "NOT_FOUND" } }), { status: 404 })) as typeof fetch;
+  const storage = createFirestoreStorage({ projectId: "p", docId: "d", fetch: notFound });
+  await expect(storage.get("cap:p1")).rejects.toBeInstanceOf(FirestoreError);
+});
+
+it("refuses a name that would change the request path", () => {
+  const fake = createFakeFirestore();
+  for (const options of [{ collection: "a/b" }, { collection: "a?b" }, { projectId: "p/x" }, { databaseId: "d#" }]) {
+    expect(() => createFirestoreStorage({ projectId: "p", docId: "d", fetch: fake.fetch, ...options })).toThrow();
+  }
+});
+
+it("ends a prefix range at the next string", () => {
+  expect(prefixEnd("u:")).toBe("u;");
+  expect(prefixEnd("a\uD7FF")).toBe("a\uE000");
+  expect(prefixEnd("a\u{10FFFF}")).toBe("b");
+  expect(prefixEnd("\u{10FFFF}")).toBeNull();
 });

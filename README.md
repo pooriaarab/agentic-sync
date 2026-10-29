@@ -353,20 +353,29 @@ well-formed text.
 
 How it is tested: one contract suite, `runStorageContract`, runs against the
 in-memory adapter and the Firestore adapter. By default, the Firestore run uses
-a fake of the REST calls in `src/firestore/fake.ts`. It follows Firestore for
-byte order, query cursors, atomic commits, and the commit, document, and id
-size limits. With `FIRESTORE_EMULATOR_HOST` set,
-the same suite runs against the real emulator. CI uses the fake. Nobody has
-run the emulator yet.
+a fake of the REST calls in `src/firestore/fake.ts`. It accepts only the real
+URL shapes. It follows Firestore for byte order, query cursors, atomic commits,
+and the commit, string-value, and id size limits. It checks string values only,
+not field names or the document name, and it does not model the 10 MiB request cap.
+
+With `FIRESTORE_EMULATOR_HOST` set, the same suite runs against the real
+Firestore emulator. The emulator run passed on the Firestore emulator 1.19.8.
+Start it with `firebase emulators:start --only firestore`, or run the emulator
+jar with Java. CI uses the fake, because it has no Java.
 
 This port moves the storage only. The room still reads and writes Durable
-Object storage directly, and the WebSocket server still runs in a Durable Object. A Node server on Firebase must bring its own socket layer.
-Firestore holds a document of up to 1 MiB, so one value must stay under 1 MB as
-JSON text. Bytes grow by a third as base64, so binary data must stay under about
-750 KB. One `putAll` takes up to 500 entries and Firestore caps a commit at 10 MiB. The
-fake does not model that cap. Update keys count up, which Firestore warns can limit
-write throughput on a hot document. Add a single-field index exemption for `value`
-to save index cost. A larger snapshot or authorship log, which the room allows, does not fit.
+Object storage directly, and the WebSocket server still runs in a Durable
+Object. A Node server on Firebase must bring its own socket layer.
+
+Limits of the adapter:
+
+- A key is up to 1000 bytes of well-formed text. It is never empty.
+- One value stays under 1 MB as JSON text. Bytes grow by a third as base64,
+  so binary data stays under about 750 KB. A larger snapshot or authorship
+  log, which the room allows, does not fit.
+- One `putAll` takes up to 500 entries. Firestore caps a commit at 10 MiB.
+- Update keys count up. Firestore warns that this can limit write throughput
+  on one hot document. A single-field index exemption for `value` saves index cost.
 
 ## Limits
 

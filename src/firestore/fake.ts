@@ -1,6 +1,8 @@
-// A fake of the Firestore REST surface the adapter calls: get, commit, and runQuery.
-// It follows Firestore: UTF-8 byte order for strings, a commit that applies all writes
-// or none, a 500-write limit, a 1 MiB document limit, a 1500-byte id limit, the startAt cursor, and a missing document as 404.
+// A fake of the Firestore REST surface the adapter calls: batchGet, commit, and runQuery.
+// It follows Firestore: the URL shapes, UTF-8 byte order for strings, a commit that applies
+// all writes or none, a 500-write limit, a 1 MiB limit on string values (not field names or
+// the document name), a 1500-byte id limit, the startAt cursor, and a missing document
+// named in batchGet. It does not model the 10 MiB request cap.
 type Fields = Record<string, { stringValue?: string }>;
 
 const compare = (a: string, b: string) => Buffer.compare(Buffer.from(a), Buffer.from(b));
@@ -9,23 +11,21 @@ const failure = (status: number, code: string) => json(status, { error: { code: 
 
 export function createFakeFirestore() {
   const docs = new Map<string, Fields>();
-  const requests: { url: string; authorization: string | null }[] = [];
+  const requests: { url: string; authorization: string | null; operation?: string; startAtBefore?: boolean }[] = [];
 
   const fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     requests.push({ url: url.href, authorization: new Headers(init?.headers).get("authorization") });
     const path = decodeURIComponent(url.pathname);
-    const documents = path.slice(path.indexOf("/documents") + "/documents".length + 1);
-    const base = path.slice(0, path.indexOf("/documents") + "/documents".length).replace(/^\/v1\//, "");
+    const match = /^\/v1\/(projects\/[^/]+\/databases\/[^/]+)\/documents(.*)$/.exec(path);
+    if (!match || (init?.method ?? "GET") !== "POST") return failure(404, "NOT_FOUND");
+    const base = `${match[1]}/documents`;
+    // Only "documents:commit", "documents:batchGet", and "<parent>:runQuery" exist. "documents/:commit" does not.
+    const documents = match[2]!.startsWith(":") ? match[2]! : match[2]!.slice(1);
+    if (!/^(:commit|:batchGet|[^:]+:runQuery)$/.test(documents)) return failure(400, "INVALID_ARGUMENT");
     const body = init?.body ? JSON.parse(init.body as string) : undefined;
+    requests.at(-1)!.operation = documents.slice(documents.lastIndexOf(":"));
 
-    // A document id holds 1 to 1500 bytes. An empty one makes a bad path.
-    const id = documents.split("/").pop()!;
-    if (!documents.startsWith(":") && !documents.includes(":") && (id === "" || Buffer.byteLength(id) > 1500)) return failure(400, "INVALID_ARGUMENT");
-    if ((init?.method ?? "GET") === "GET") {
-      const fields = docs.get(`${base}/${documents}`);
-      return fields ? json(200, { name: `${base}/${documents}`, fields }) : failure(404, "NOT_FOUND");
-    }
     if (documents === ":commit") {
       const writes = body.writes as { update?: { name: string; fields: Fields }; delete?: string }[];
       if (writes.length > 500) return failure(400, "INVALID_ARGUMENT");
@@ -42,11 +42,19 @@ export function createFakeFirestore() {
       return json(200, { writeResults: writes.map(() => ({})) });
     }
     if (documents === ":batchGet") {
-      return json(200, (body.documents as string[]).map((name) => (docs.has(name) ? { found: { name, fields: docs.get(name) } } : { missing: name })));
+      return json(
+        200,
+        (body.documents as string[]).map((name) => {
+          const id = name.slice(name.lastIndexOf("/") + 1);
+          if (id === "" || Buffer.byteLength(id) > 1500) return { missing: name };
+          return docs.has(name) ? { found: { name, fields: docs.get(name) } } : { missing: name };
+        }),
+      );
     }
     if (documents.endsWith(":runQuery")) {
       const parent = `${base}/${documents.slice(0, -":runQuery".length)}`;
       const q = body.structuredQuery;
+      if (q.startAt) requests.at(-1)!.startAtBefore = q.startAt.before;
       const collection = q.from[0].collectionId as string;
       const filters: { fieldFilter: { op: string; value: { stringValue: string } } }[] = !q.where
         ? []

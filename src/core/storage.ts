@@ -8,10 +8,10 @@ export interface RoomStorage {
   // Every entry whose key starts with the prefix, in UTF-8 byte order of the key.
   list<T = unknown>(prefix: string): Promise<Map<string, T>>;
   put(key: string, value: unknown): Promise<void>;
-  // All entries land together or not at all. A backend may cap the entries
-  // (Firestore: 500) and the size of a value (Firestore: about 1 MB).
+  // All entries land together or not at all. It takes up to 500 entries. A backend may cap the size
+  // of a value (Firestore: about 1 MB).
   putAll(entries: Record<string, unknown>): Promise<void>;
-  // Returns how many entries existed.
+  // Returns how many entries existed. The count is exact only when no other write races.
   delete(keys: string[]): Promise<number>;
   // Removes every entry of the document.
   deleteAll(): Promise<void>;
@@ -19,9 +19,28 @@ export interface RoomStorage {
 
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
-// A key is non-empty, well-formed text. A lone surrogate would match another key in a UTF-8 backend.
+export const MAX_KEY_BYTES = 1000;
+export const MAX_PUT_ALL = 500;
+const encoder = new TextEncoder();
+
+// A key is non-empty, well-formed text of up to 1000 UTF-8 bytes. A lone surrogate
+// would match another key in a UTF-8 backend, and a long key breaks the Firestore id limit.
 export function assertText(text: string, what = "a key"): void {
-  if (text === "" || LONE_SURROGATE.test(text)) throw new Error(`${what} must be non-empty, well-formed text`);
+  if (text === "" || LONE_SURROGATE.test(text) || encoder.encode(text).length > MAX_KEY_BYTES) {
+    throw new Error(`${what} must be non-empty, well-formed text of up to ${MAX_KEY_BYTES} bytes`);
+  }
+}
+
+// UTF-8 byte order, as Firestore sorts.
+export function compareKeys(a: string, b: string): number {
+  const x = encoder.encode(a);
+  const y = encoder.encode(b);
+  for (let i = 0; i < Math.min(x.length, y.length); i++) if (x[i] !== y[i]) return x[i]! - y[i]!;
+  return x.length - y.length;
+}
+
+export function assertPrefix(prefix: string): void {
+  if (LONE_SURROGATE.test(prefix) || encoder.encode(prefix).length > MAX_KEY_BYTES) throw new Error("a prefix must be well-formed text");
 }
 
 const BYTES = "$bytes";
@@ -62,8 +81,7 @@ export function decodeValue<T>(text: string): T {
 // It does not enforce the size limits of a real backend.
 export function createMemoryStorage(): RoomStorage {
   const data = new Map<string, string>();
-  // UTF-8 byte order, as Firestore sorts.
-  const sorted = () => [...data.keys()].sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)));
+  const sorted = () => [...data.keys()].sort(compareKeys);
   return {
     async get<T>(key: string) {
       assertText(key);
@@ -71,6 +89,7 @@ export function createMemoryStorage(): RoomStorage {
       return text === undefined ? undefined : decodeValue<T>(text);
     },
     async list<T>(prefix: string) {
+      assertPrefix(prefix);
       return new Map(sorted().filter((key) => key.startsWith(prefix)).map((key) => [key, decodeValue<T>(data.get(key)!)]));
     },
     async put(key, value) {
@@ -78,10 +97,12 @@ export function createMemoryStorage(): RoomStorage {
       data.set(key, encodeValue(value));
     },
     async putAll(entries) {
+      if (Object.keys(entries).length > MAX_PUT_ALL) throw new Error(`putAll takes up to ${MAX_PUT_ALL} entries`);
       const encoded = Object.entries(entries).map(([key, value]) => (assertText(key), [key, encodeValue(value)] as const));
       for (const [key, text] of encoded) data.set(key, text);
     },
     async delete(keys) {
+      keys.forEach((key) => assertText(key));
       return keys.filter((key) => data.delete(key)).length;
     },
     async deleteAll() {

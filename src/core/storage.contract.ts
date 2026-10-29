@@ -36,6 +36,25 @@ export function runStorageContract(name: string, { make }: ContractOptions): voi
       await expect(storage.get("s:\udbff")).rejects.toThrow();
     });
 
+    it("refuses a bad key in delete and list, and a key over 1000 bytes", async () => {
+      const storage = fresh();
+      await expect(storage.delete([""])).rejects.toThrow();
+      await expect(storage.delete(["\ud800"])).rejects.toThrow();
+      await expect(storage.list("\ud800")).rejects.toThrow();
+      await expect(storage.put("k".repeat(1001), 1)).rejects.toThrow();
+      await storage.put("k".repeat(1000), 1);
+      expect(await storage.get("k".repeat(1000))).toBe(1);
+    });
+
+    it("refuses putAll over 500 entries, and writes none", async () => {
+      const storage = fresh();
+      const entries = Object.fromEntries(Array.from({ length: 501 }, (_, i) => [`u:${i}`, i]));
+      await expect(storage.putAll(entries)).rejects.toThrow();
+      expect((await storage.list("")).size).toBe(0);
+      await storage.putAll(Object.fromEntries(Object.entries(entries).slice(0, 500)));
+      expect((await storage.list("")).size).toBe(500);
+    });
+
     it("refuses a value that JSON would change", async () => {
       const storage = fresh();
       for (const value of [new Map(), new Date(0), { a: () => 1 }, { a: undefined }, undefined, 1n, { a: NaN }, Infinity, -0]) {
