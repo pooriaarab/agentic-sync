@@ -2,8 +2,8 @@
 
 ## 0.2.0
 
-This release changes the `Realtime` port. If you wrote your own adapter, read
-the migration note before you upgrade. The Cloudflare adapter,
+This release changes the `Realtime` port. If you wrote your own adapter or host,
+read the migration note and the changed list before you upgrade. The Cloudflare adapter,
 `createDurableObjectRealtime`, already has every method.
 
 ### Breaking

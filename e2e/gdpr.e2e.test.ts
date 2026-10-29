@@ -114,14 +114,17 @@ describe("export and delete, under wrangler dev", () => {
     const first = await startWorker({ SYNC_ADMIN_SECRET: SECRET });
     extra.push(first);
     await fill("erase", first);
-    await revokePrincipal(host(first), "erase", "agent-9");
+    // agent-7 holds the "agent" token, so this ban is the one the check below reads.
+    await revokePrincipal(host(first), "erase", "agent-7");
+    expect(await status("/api/v1/docs/erase", "agent", {}, first)).toBe(403);
     const watcher = new Peer(`${first.ws}/api/v1/docs/erase/ws?token=viewer`);
     await watcher.synced;
     let code: number | undefined;
     void watcher.closed.then((value) => (code = value));
 
     const result = await deleteDocument(target("editor2", first), "erase");
-    expect(result.sockets).toBeGreaterThanOrEqual(3);
+    // The revoked agent socket already closed, so the human and the watcher remain.
+    expect(result.sockets).toBeGreaterThanOrEqual(2);
     await until(() => code !== undefined, "the socket to close");
     expect(code).toBe(4004);
 
