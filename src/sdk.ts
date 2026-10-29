@@ -117,16 +117,17 @@ export const getAttribution = async (target: Target, docId: string, snapshot?: s
 // Splits a text root into runs and names the principal that sent each one.
 // A run no range names has `author: null`.
 export async function blame(target: Target, docId: string, root: string, snapshot?: string): Promise<BlameSpan[]> {
-  const log = await getAttribution(target, docId, snapshot);
   if (snapshot !== undefined) {
+    const log = await getAttribution(target, docId, snapshot);
     const doc = new Y.Doc();
     Y.applyUpdate(doc, new Uint8Array(await (await read(target, docId, `snapshots/${encodeURIComponent(snapshot)}`)).arrayBuffer()));
     assertTextRootOf(doc, root);
     return blameText(doc, root, log);
   }
+  // Join first, then read the log, so the log is never older than the text.
   return withDoc(target, docId, async (client) => {
     assertTextRootOf(client.doc, root);
-    return blameText(client.doc, root, log);
+    return blameText(client.doc, root, await getAttribution(target, docId));
   });
 }
 

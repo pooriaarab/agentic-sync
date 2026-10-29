@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import * as Y from "yjs";
 import { SyncClient } from "../src/client/index.js";
+import { updateMessage } from "../src/core/protocol.js";
 import { blame, getAttribution, type Target } from "../src/sdk.js";
+import { Peer } from "./peer.js";
 import { startWorker, until, type Server } from "./server.js";
 
 const HUMAN = { id: "person-1", kind: "human", machine: false };
@@ -95,6 +98,69 @@ describe("who wrote what, under wrangler dev", () => {
     expect(await blame(target(capped, "viewer"), "capped", "body")).toEqual([
       { text: "0123", author: null },
       ...Array.from({ length: 6 }, (_, k) => ({ text: String(k + 4), author: (k + 4) % 2 === 0 ? HUMAN : AGENT })),
+    ]);
+  });
+
+  // A copy of the client's document that writes under the client's own id.
+  const impostor = (victim: SyncClient) => {
+    const copy = new Y.Doc();
+    Y.applyUpdate(copy, Y.encodeStateAsUpdate(victim.doc));
+    copy.clientID = victim.doc.clientID;
+    return copy;
+  };
+
+  test("an update held back for missing content cannot borrow the next writer's name", async () => {
+    const person = await join(server, "held", "editor");
+    await append(person, "Hi ");
+    const bot = new Peer(`${server.ws}/api/v1/docs/held/ws?token=agent`);
+    await bot.synced;
+    let code: number | undefined;
+    void bot.closed.then((value) => (code = value));
+    // The bot's item points at the id the person will use next. The room
+    // has no such id, so Yjs holds the item until the person writes it.
+    const ghost = impostor(person);
+    ghost.getText("body").insert(3, "Z");
+    const accomplice = new Y.Doc();
+    Y.applyUpdate(accomplice, Y.encodeStateAsUpdate(ghost));
+    let held: Uint8Array | undefined;
+    accomplice.on("update", (update: Uint8Array) => (held = update));
+    accomplice.getText("body").insert(4, "BOT");
+    bot.sendRaw(updateMessage(held!));
+    await until(() => code !== undefined, "the room to refuse the held update");
+    expect(code).toBe(1008);
+
+    await append(person, "!");
+    expect(await blame(target(server, "viewer"), "held", "body")).toEqual([{ text: "Hi !", author: HUMAN }]);
+  });
+
+  test("a sender cannot write under the client id of another principal", async () => {
+    const person = await join(server, "claim", "editor");
+    await append(person, "Hi ");
+    const bot = new Peer(`${server.ws}/api/v1/docs/claim/ws?token=agent`);
+    await bot.synced;
+    const forged = impostor(person);
+    let update: Uint8Array | undefined;
+    forged.on("update", (u: Uint8Array) => (update = u));
+    forged.getText("body").insert(3, "BOT");
+    bot.sendRaw(updateMessage(update!));
+    await until(() => bot.denied.length > 0, "the room to refuse the update");
+    expect(bot.denied).toEqual(["client id belongs to another principal"]);
+    expect(await blame(target(server, "viewer"), "claim", "body")).toEqual([{ text: "Hi ", author: HUMAN }]);
+  });
+
+  test("a restore keeps the authors of the text it leaves alone", async () => {
+    const agent = await join(server, "restore", "agent");
+    await append(agent, "bot");
+    const person = await join(server, "restore", "editor");
+    await until(() => text(person) === "bot", "the agent's text to arrive");
+    await append(person, " ok");
+    await person.snapshot("v1");
+    await append(person, "!");
+    await person.restore("v1");
+    expect(text(person)).toBe("bot ok");
+    expect(await blame(target(server, "viewer"), "restore", "body")).toEqual([
+      { text: "bot", author: AGENT },
+      { text: " ok", author: HUMAN },
     ]);
   });
 });

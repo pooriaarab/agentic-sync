@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
 import * as Y from "yjs";
-import { AttributionLog, DEFAULT_MAX_RANGES } from "../core/attribution.js";
+import { AttributionLog, DEFAULT_MAX_RANGES, LARGEST_MAX_RANGES } from "../core/attribution.js";
 import {
   AwarenessRelay,
   AwarenessViolation,
@@ -112,7 +112,7 @@ export interface RoomEnv {
   SYNC_COMPACT_EVERY?: string;
   // Seconds between re-authorizations of open sockets. Default 60.
   SYNC_REAUTH_INTERVAL_SECONDS?: string;
-  // Ranges the attribution log keeps, 4 to 20000. Default 4000.
+  // Ranges the attribution log keeps, 4 to 5000. Default 4000.
   SYNC_ATTRIBUTION_MAX_RANGES?: string;
 }
 
@@ -144,7 +144,7 @@ export class SyncRoom extends DurableObject<RoomEnv> {
       ? Math.min(MAX_COMPACT_EVERY, Math.max(1, configured))
       : DEFAULT_COMPACT_EVERY;
     const ranges = Number.parseInt(env.SYNC_ATTRIBUTION_MAX_RANGES ?? "", 10);
-    this.maxRanges = Number.isInteger(ranges) ? Math.min(20_000, Math.max(4, ranges)) : DEFAULT_MAX_RANGES;
+    this.maxRanges = Number.isInteger(ranges) ? Math.min(LARGEST_MAX_RANGES, Math.max(4, ranges)) : DEFAULT_MAX_RANGES;
     this.attribution = new AttributionLog(this.maxRanges);
     const reauthSeconds = Number.parseInt(env.SYNC_REAUTH_INTERVAL_SECONDS ?? "", 10);
     this.reauthMs =
@@ -170,6 +170,16 @@ export class SyncRoom extends DurableObject<RoomEnv> {
     this.authors.set(`${author.kind}:${author.id}`, author);
   }
 
+  // A damaged log must not take the document offline. Start a new one that says history is lost.
+  private readLog(saved: unknown): AttributionLog {
+    try {
+      return AttributionLog.from(saved, this.maxRanges);
+    } catch {
+      console.error("stored attribution is damaged");
+      return AttributionLog.lost(this.maxRanges);
+    }
+  }
+
   private async load(): Promise<void> {
     this.docId = await this.ctx.storage.get<string>("docid");
     const caps = await this.ctx.storage.list({ prefix: "cap:" });
@@ -181,7 +191,7 @@ export class SyncRoom extends DurableObject<RoomEnv> {
       this.compactions = base.compactions;
       this.bytes = base.state.length;
     }
-    this.attribution = AttributionLog.from(await this.ctx.storage.get("attr"), this.maxRanges);
+    this.attribution = this.readLog(await this.ctx.storage.get("attr"));
     const log = await this.ctx.storage.list<UpdateRecord>({ prefix: "u:" });
     for (const [key, record] of log) {
       Y.applyUpdate(this.doc, record.update, FROM_STORAGE);
@@ -280,7 +290,7 @@ export class SyncRoom extends DurableObject<RoomEnv> {
       const log = await this.ctx.storage.get(`a:${saved[1]}`);
       return log === undefined
         ? new Response(null, { status: 404 })
-        : Response.json(AttributionLog.from(log, this.maxRanges).labeled());
+        : Response.json(this.readLog(log).labeled());
     }
     if (pathname.startsWith("/snapshots")) {
       return this.snapshots(request, pathname.split("/")[2]);
@@ -330,10 +340,24 @@ export class SyncRoom extends DurableObject<RoomEnv> {
         canWrite: canWrite(role),
         origin: { ws, author: principal },
         refuse: (update) =>
-          this.bytes + update.length > MAX_DOC_BYTES ? "document size limit reached" : null,
+          this.bytes + update.length > MAX_DOC_BYTES
+            ? "document size limit reached"
+            : this.attribution.conflicts(update, principal)
+              ? "client id belongs to another principal"
+              : null,
       });
     } catch {
       ws.close(1007, "malformed message");
+      return;
+    }
+    // Yjs keeps an update that needs missing content and applies it inside the
+    // next update, under that update's sender. Drop it, or the next sender
+    // would get the name on text it did not write.
+    const { store } = this.doc;
+    if (store.pendingStructs !== null || store.pendingDs !== null) {
+      store.pendingStructs = null;
+      store.pendingDs = null;
+      ws.close(1008, "update needs content the room does not have");
       return;
     }
     if (incoming.reply) ws.send(incoming.reply);

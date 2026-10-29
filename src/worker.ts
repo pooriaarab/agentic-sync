@@ -27,7 +27,7 @@ export interface SyncEnv {
   SYNC_COMPACT_EVERY?: string;
   // Seconds between re-authorizations of open sockets. Default 60.
   SYNC_REAUTH_INTERVAL_SECONDS?: string;
-  // Ranges the attribution log keeps, 4 to 20000. Default 4000.
+  // Ranges the attribution log keeps, 4 to 5000. Default 4000.
   SYNC_ATTRIBUTION_MAX_RANGES?: string;
   // Bearer secret for /api/v1/admin. At least 32 bytes. Unset turns admin off.
   SYNC_ADMIN_SECRET?: string;

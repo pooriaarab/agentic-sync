@@ -65,7 +65,8 @@ export interface SnapshotInfo {
 }
 
 export const MAX_PRINCIPAL_ID_LENGTH = 256;
-export const SNAPSHOT_NAME_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
+// "." and ".." would walk out of the snapshot path.
+export const SNAPSHOT_NAME_PATTERN = /^(?!\.{1,2}$)[A-Za-z0-9._-]{1,64}$/;
 export const MAX_SNAPSHOTS = 50;
 
 // The sync server port. The Cloudflare adapter uses Durable Objects.

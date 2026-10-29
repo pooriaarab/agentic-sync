@@ -45,7 +45,7 @@ export function createDurableObjectRealtime(
       return (await response.json()) as SnapshotInfo[];
     },
     async getSnapshot(docId: string, name: string) {
-      const response = await room(docId).fetch(`https://room.internal/snapshots/${name}`);
+      const response = await room(docId).fetch(`https://room.internal/snapshots/${encodeURIComponent(name)}`);
       return response.status === 200 ? new Uint8Array(await response.arrayBuffer()) : null;
     },
     revoke: (docId: string, principalId: string) => room(docId).revoke(principalId),
@@ -53,7 +53,7 @@ export function createDurableObjectRealtime(
       room(docId).updateRole(principalId, role),
     roleFor: (docId: string, grant: Grant) => room(docId).roleFor(grant),
     async attribution(docId: string, snapshot?: string) {
-      const path = snapshot === undefined ? "attribution" : `snapshots/${snapshot}/attribution`;
+      const path = snapshot === undefined ? "attribution" : `snapshots/${encodeURIComponent(snapshot)}/attribution`;
       const response = await room(docId).fetch(`https://room.internal/${path}`);
       return response.status === 200 ? ((await response.json()) as Attribution) : null;
     },

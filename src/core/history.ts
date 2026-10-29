@@ -33,6 +33,29 @@ export function rootKind(doc: Y.Doc, root: string): Kind | "empty" {
 const copy = (value: unknown): unknown =>
   value instanceof Y.AbstractType ? (value as Y.Map<unknown>).clone() : value;
 
+const isPlain = (text: Y.Text): boolean =>
+  text.toDelta().every((op: { insert: unknown; attributes?: unknown }) => typeof op.insert === "string" && op.attributes === undefined);
+
+// Makes `text` hold what `target` holds. When neither has formatting, only
+// the part in the middle that differs changes, so the rest keeps its authors.
+function rewriteText(text: Y.Text, target: Y.Text): void {
+  if (!isPlain(text) || !isPlain(target)) {
+    text.delete(0, text.length);
+    text.applyDelta(target.toDelta());
+    return;
+  }
+  const [now, then] = [text.toString(), target.toString()];
+  let head = 0;
+  while (head < now.length && head < then.length && now[head] === then[head]) head++;
+  // Never cut between the two halves of a surrogate pair.
+  if (head > 0 && (now.charCodeAt(head - 1) & 0xfc00) === 0xd800) head--;
+  let tail = 0;
+  while (tail < now.length - head && tail < then.length - head && now[now.length - 1 - tail] === then[then.length - 1 - tail]) tail++;
+  if (tail > 0 && (now.charCodeAt(now.length - tail) & 0xfc00) === 0xdc00) tail--;
+  text.delete(head, now.length - head - tail);
+  text.insert(head, then.slice(head, then.length - tail));
+}
+
 // Makes the live document hold the content of an older state, as one new
 // update. Nothing already stored changes, so every version stays reachable.
 export function restoreState(live: Y.Doc, state: Uint8Array, origin?: unknown): void {
@@ -43,9 +66,7 @@ export function restoreState(live: Y.Doc, state: Uint8Array, origin?: unknown): 
       const mine = live.share.get(key);
       const kind = kindOf(mine && mine.constructor !== Y.AbstractType ? mine : (old.share.get(key) ?? mine!));
       if (kind === "text") {
-        const text = live.getText(key);
-        text.delete(0, text.length);
-        text.applyDelta(old.getText(key).toDelta());
+        rewriteText(live.getText(key), old.getText(key));
       } else if (kind === "map") {
         const map = live.getMap(key);
         const before = old.getMap(key);
