@@ -36,10 +36,12 @@ const copy = (value: unknown): unknown =>
 type Attributes = Record<string, unknown>;
 type Delta = { insert: string | object; attributes?: Attributes };
 
-// One UTF-16 unit of text, or one embed, with its formatting.
+// One character (a surrogate pair counts as one), or one embed, with its formatting.
 interface Unit {
   // The character or embed alone. Two units with the same char differ only in formatting.
   char: string;
+  // Its length in the text, which a delta counts in UTF-16 units.
+  length: number;
   attributes: Attributes;
   op: Delta;
 }
@@ -47,16 +49,63 @@ interface Unit {
 function unitsOf(text: Y.Text): Unit[] {
   return (text.toDelta() as Delta[]).flatMap((op) => {
     const attributes = op.attributes ?? {};
-    if (typeof op.insert !== "string") return [{ char: `\0${JSON.stringify(op.insert)}`, attributes, op }];
-    return op.insert.split("").map((unit) => ({ char: unit, attributes, op: { insert: unit, attributes: op.attributes } }));
+    if (typeof op.insert !== "string") return [{ char: `\0${JSON.stringify(op.insert)}`, length: 1, attributes, op }];
+    return (op.insert.match(/[\uD800-\uDBFF][\uDC00-\uDFFF]|[^]/g) ?? []).map((char) => ({
+      char,
+      length: char.length,
+      attributes,
+      op: { insert: char, attributes: op.attributes },
+    }));
   });
+}
+
+// The most changes the diff looks for. A text that differs more is replaced in the middle.
+const MAX_DIFF_EDITS = 600;
+
+type Step = "=" | "-" | "+";
+
+// A shortest list of equal, delete, and insert steps from `a` to `b` (Myers), or
+// null when it needs more than MAX_DIFF_EDITS changes.
+function diff(a: string[], b: string[]): Step[] | null {
+  const [n, m] = [a.length, b.length];
+  const limit = Math.min(n + m, MAX_DIFF_EDITS);
+  const offset = limit + 1;
+  let v = new Int32Array(2 * limit + 3);
+  const trace: Int32Array[] = [];
+  for (let d = 0; d <= limit; d++) {
+    trace.push(v.slice());
+    for (let k = -d; k <= d; k += 2) {
+      let x = k === -d || (k !== d && v[offset + k - 1] < v[offset + k + 1]) ? v[offset + k + 1] : v[offset + k - 1] + 1;
+      let y = x - k;
+      while (x < n && y < m && a[x] === b[y]) (x++, y++);
+      v[offset + k] = x;
+      if (x >= n && y >= m) return backtrack(trace, d, n, m, offset);
+    }
+  }
+  return null;
+}
+
+function backtrack(trace: Int32Array[], found: number, n: number, m: number, offset: number): Step[] {
+  const steps: Step[] = [];
+  let [x, y] = [n, m];
+  for (let d = found; d > 0; d--) {
+    const before = trace[d];
+    const k = x - y;
+    const previousK = k === -d || (k !== d && before[offset + k - 1] < before[offset + k + 1]) ? k + 1 : k - 1;
+    const [previousX, previousY] = [before[offset + previousK], before[offset + previousK] - previousK];
+    while (x > previousX && y > previousY) (steps.push("="), x--, y--);
+    steps.push(x === previousX ? "+" : "-");
+    [x, y] = [previousX, previousY];
+  }
+  while (x > 0 && y > 0) (steps.push("="), x--, y--);
+  return steps.reverse();
 }
 
 // What to set on a unit with `from` formatting to give it `to` formatting. Null removes a key.
 function attributeChange(from: Attributes, to: Attributes): Attributes | null {
   const change: Attributes = {};
   for (const key of Object.keys(to)) if (JSON.stringify(from[key]) !== JSON.stringify(to[key])) change[key] = to[key];
-  for (const key of Object.keys(from)) if (!(key in to)) change[key] = null;
+  for (const key of Object.keys(from)) if (!Object.hasOwn(to, key)) change[key] = null;
   return Object.keys(change).length > 0 ? change : null;
 }
 
@@ -66,8 +115,8 @@ function retainWithFormat(now: Unit[], then: Unit[]): Delta[] {
   now.forEach((unit, i) => {
     const change = attributeChange(unit.attributes, then[i].attributes);
     const last = ops[ops.length - 1];
-    if (last !== undefined && JSON.stringify(last.attributes) === JSON.stringify(change ?? undefined)) last.retain += 1;
-    else ops.push({ retain: 1, ...(change === null ? {} : { attributes: change }) });
+    if (last !== undefined && JSON.stringify(last.attributes) === JSON.stringify(change ?? undefined)) last.retain += unit.length;
+    else ops.push({ retain: unit.length, ...(change === null ? {} : { attributes: change }) });
   });
   return ops as unknown as Delta[];
 }
@@ -75,33 +124,51 @@ function retainWithFormat(now: Unit[], then: Unit[]): Delta[] {
 const copyEmbed = (value: string | object): string | object =>
   value instanceof Y.AbstractType ? (value as Y.Map<unknown>).clone() : value;
 
-// Makes `text` hold what `target` holds. Units with the same character stay,
-// so their authors stay, and only their formatting changes. Characters that
-// differ are deleted and inserted again.
-function rewriteText(text: Y.Text, target: Y.Text): void {
-  const [now, then] = [unitsOf(text), unitsOf(target)];
-  let head = 0;
-  while (head < now.length && head < then.length && now[head].char === then[head].char) head++;
-  // Never cut between the two halves of a surrogate pair.
-  if (head > 0 && (now[head - 1].char.charCodeAt(0) & 0xfc00) === 0xd800) head--;
-  let tail = 0;
-  while (tail < now.length - head && tail < then.length - head && now[now.length - 1 - tail].char === then[then.length - 1 - tail].char) tail++;
-  if (tail > 0 && (now[now.length - tail].char.charCodeAt(0) & 0xfc00) === 0xdc00) tail--;
-  const [nowMiddle, thenMiddle] = [now.slice(head, now.length - tail), then.slice(head, then.length - tail)];
+function insertRuns(units: Unit[]): Delta[] {
   const runs: Delta[] = [];
-  for (const { op } of thenMiddle) {
+  for (const { op } of units) {
     const last = runs[runs.length - 1];
     const format = JSON.stringify(op.attributes);
     if (last !== undefined && typeof last.insert === "string" && typeof op.insert === "string" && JSON.stringify(last.attributes) === format) {
       last.insert += op.insert;
     } else runs.push({ insert: copyEmbed(op.insert), ...(op.attributes === undefined ? {} : { attributes: op.attributes }) });
   }
-  text.applyDelta([
-    ...retainWithFormat(now.slice(0, head), then.slice(0, head)),
-    ...(nowMiddle.length > 0 ? [{ delete: nowMiddle.length }] : []),
-    ...runs,
-    ...retainWithFormat(now.slice(now.length - tail), then.slice(then.length - tail)),
-  ]);
+  return runs;
+}
+
+// Makes `text` hold what `target` holds. A diff keeps the units that match, so
+// they keep their authors and only their formatting changes. The rest is
+// deleted and inserted again. A text that differs in more than MAX_DIFF_EDITS
+// places is replaced between its shared start and end.
+function rewriteText(text: Y.Text, target: Y.Text): void {
+  const [now, then] = [unitsOf(text), unitsOf(target)];
+  let head = 0;
+  while (head < now.length && head < then.length && now[head].char === then[head].char) head++;
+  let tail = 0;
+  while (tail < now.length - head && tail < then.length - head && now[now.length - 1 - tail].char === then[then.length - 1 - tail].char) tail++;
+  const [nowMiddle, thenMiddle] = [now.slice(head, now.length - tail), then.slice(head, then.length - tail)];
+  const steps = diff(nowMiddle.map((unit) => unit.char), thenMiddle.map((unit) => unit.char)) ??
+    [...nowMiddle.map((): Step => "-"), ...thenMiddle.map((): Step => "+")];
+  const ops: Delta[] = [...retainWithFormat(now.slice(0, head), then.slice(0, head))];
+  let [i, j] = [0, 0];
+  for (let s = 0; s < steps.length; ) {
+    let end = s;
+    while (end < steps.length && steps[end] === steps[s]) end++;
+    const count = end - s;
+    if (steps[s] === "=") {
+      ops.push(...retainWithFormat(nowMiddle.slice(i, i + count), thenMiddle.slice(j, j + count)));
+      [i, j] = [i + count, j + count];
+    } else if (steps[s] === "-") {
+      ops.push({ delete: nowMiddle.slice(i, i + count).reduce((sum, unit) => sum + unit.length, 0) } as unknown as Delta);
+      i += count;
+    } else {
+      ops.push(...insertRuns(thenMiddle.slice(j, j + count)));
+      j += count;
+    }
+    s = end;
+  }
+  ops.push(...retainWithFormat(now.slice(now.length - tail), then.slice(then.length - tail)));
+  text.applyDelta(ops);
 }
 
 // Makes the live document hold the content of an older state, as one new

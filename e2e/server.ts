@@ -59,8 +59,21 @@ async function launchWorker(vars: Record<string, string>, persist: string): Prom
       // The group is already gone.
     }
   };
-  // A run that ends without stop() must not leave workerd behind.
+  // A run that ends without stop() must not leave workerd behind. A signal
+  // skips "exit", so end the group on the signal and raise it again.
+  const onSignal = (signal: NodeJS.Signals) => {
+    forget();
+    killGroup();
+    process.kill(process.pid, signal);
+  };
+  const forget = () => {
+    process.removeListener("exit", killGroup);
+    process.removeListener("SIGINT", onSignal);
+    process.removeListener("SIGTERM", onSignal);
+  };
   process.once("exit", killGroup);
+  process.once("SIGINT", onSignal);
+  process.once("SIGTERM", onSignal);
   let log = "";
   child.stdout?.on("data", (chunk) => (log += chunk));
   child.stderr?.on("data", (chunk) => (log += chunk));
@@ -86,6 +99,7 @@ async function launchWorker(vars: Record<string, string>, persist: string): Prom
     log: () => log,
     stop: () =>
       new Promise((resolve) => {
+        forget();
         if (child.exitCode !== null || child.signalCode !== null) return killGroup(), resolve();
         child.once("exit", () => resolve());
         killGroup();

@@ -218,4 +218,20 @@ describe("who wrote what, under wrangler dev", () => {
     expect(first.insert).toBe("x");
     expect((second.insert as Y.Map<string>).toJSON()).toEqual({ k: "v" });
   });
+
+  test("a restore after edits at both ends keeps the authors of the middle", async () => {
+    const agent = await join(server, "ends", "agent");
+    await append(agent, "agent paragraph");
+    const person = await join(server, "ends", "editor");
+    await until(() => text(person) === "agent paragraph", "the agent's text to arrive");
+    await person.snapshot("before");
+    await person.edit((doc) => {
+      const body = doc.getText("body");
+      body.insert(0, "X");
+      body.insert(body.length, "Y");
+    });
+    await person.restore("before");
+    expect(text(person)).toBe("agent paragraph");
+    expect(await blame(target(server, "viewer"), "ends", "body")).toEqual([{ text: "agent paragraph", author: AGENT }]);
+  });
 });
