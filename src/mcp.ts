@@ -62,7 +62,7 @@ export function createMcpServer(env: Record<string, string | undefined> = proces
   );
   server.registerTool(
     "doc_restore",
-    { description: "Restore a snapshot as a new edit. History stays. Text the restore brings back counts as written by you. In a text that differs in more than 600 places, the part between the shared start and end counts as written by you too.", inputSchema: { doc, name } },
+    { description: "Restore a snapshot as a new edit. History stays. Text the restore brings back counts as written by you.", inputSchema: { doc, name } },
     (a) => guard((t) => sdk.restoreSnapshot(t, a.doc, a.name)),
   );
   server.registerTool(

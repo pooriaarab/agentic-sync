@@ -234,4 +234,36 @@ describe("who wrote what, under wrangler dev", () => {
     expect(text(person)).toBe("agent paragraph");
     expect(await blame(target(server, "viewer"), "ends", "body")).toEqual([{ text: "agent paragraph", author: AGENT }]);
   });
+
+  test("a restore labels brought-back text by who restored, not by letters that match", async () => {
+    const agent = await join(server, "unrelated", "agent");
+    await append(agent, "The agent drafted this plan summary.");
+    await agent.snapshot("draft");
+    const person = await join(server, "unrelated", "editor");
+    await until(() => text(person) === text(agent), "the agent's text to arrive");
+    await person.edit((doc) => {
+      const body = doc.getText("body");
+      body.delete(0, body.length);
+      body.insert(0, "Ann replaced it with her own notes here.");
+    });
+    await until(() => text(agent) === text(person), "the person's text to arrive");
+    await agent.restore("draft");
+    expect(text(agent)).toBe("The agent drafted this plan summary.");
+    expect(await blame(target(server, "viewer"), "unrelated", "body")).toEqual([
+      { text: "The agent drafted this plan summary.", author: AGENT },
+    ]);
+
+    // The other way round: the person restores a note that the agent rewrote.
+    await until(() => text(person) === text(agent), "the agent's text to arrive");
+    await person.snapshot("agent-version");
+    await person.edit((doc) => {
+      const body = doc.getText("body");
+      body.delete(0, body.length);
+      body.insert(0, "Ann wrote this version by hand.");
+    });
+    await person.restore("agent-version");
+    expect(await blame(target(server, "viewer"), "unrelated", "body")).toEqual([
+      { text: "The agent drafted this plan summary.", author: HUMAN },
+    ]);
+  });
 });

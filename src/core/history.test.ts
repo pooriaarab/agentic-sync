@@ -2,9 +2,10 @@ import { expect, test } from "vitest";
 import * as Y from "yjs";
 import { restoreState } from "./history.js";
 
-// Ways restore can go wrong on text, listed before the fix to the diff:
-// 1. A text that needs more than the diff limit of changes must still end up equal to the snapshot.
-// 2. Two characters of a surrogate pair must never be split by an edit.
+// Ways restore can go wrong on text, listed before the change to match by item:
+// 1. A snapshot from another document (no shared ids) must still restore the exact text.
+// 2. A surrogate pair must never be split by an edit.
+// 3. Text new since the snapshot goes, text deleted since comes back, in the right order.
 const restored = (now: string, then: string): string => {
   const old = new Y.Doc();
   old.getText("body").insert(0, then);
@@ -14,12 +15,23 @@ const restored = (now: string, then: string): string => {
   return live.getText("body").toString();
 };
 
-test("a text that differs in more places than the diff looks for still restores exactly", () => {
-  const [now, then] = ["ab".repeat(700), "ba".repeat(700)];
-  expect(restored(now, then)).toBe(then);
+test("a snapshot with no shared ids restores the exact text", () => {
+  expect(restored("ab".repeat(700), "ba".repeat(700))).toBe("ba".repeat(700));
 });
 
 test("a surrogate pair is never split", () => {
   expect(restored("a\u{1F600}b\u{1F601}", "a\u{1F601}b\u{1F600}")).toBe("a\u{1F601}b\u{1F600}");
-  expect(restored("\u{1F600}x", "\u{1F601}x")).toBe("\u{1F601}x");
+});
+
+test("text added since goes, text deleted since comes back", () => {
+  const doc = new Y.Doc();
+  const body = doc.getText("body");
+  body.insert(0, "keep and lose");
+  const snapshot = Y.encodeStateAsUpdate(doc);
+  body.delete(4, 9);
+  body.insert(4, " plus new");
+  body.delete(0, 1);
+  body.insert(0, "K");
+  restoreState(doc, snapshot);
+  expect(body.toString()).toBe("keep and lose");
 });

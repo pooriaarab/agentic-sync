@@ -38,67 +38,41 @@ type Delta = { insert: string | object; attributes?: Attributes };
 
 // One character (a surrogate pair counts as one), or one embed, with its formatting.
 interface Unit {
-  // The character or embed alone. Two units with the same char differ only in formatting.
-  char: string;
+  // Names the unit in the Yjs history. The live text and an older state of it
+  // hold the same unit under the same id, so a match by id is the same text.
+  id: string;
   // Its length in the text, which a delta counts in UTF-16 units.
   length: number;
   attributes: Attributes;
   op: Delta;
 }
 
+// Walks the items of a text root, in order, with the formatting in effect.
 function unitsOf(text: Y.Text): Unit[] {
-  return (text.toDelta() as Delta[]).flatMap((op) => {
-    const attributes = op.attributes ?? {};
-    if (typeof op.insert !== "string") return [{ char: `\0${JSON.stringify(op.insert)}`, length: 1, attributes, op }];
-    return (op.insert.match(/[\uD800-\uDBFF][\uDC00-\uDFFF]|[^]/g) ?? []).map((char) => ({
-      char,
-      length: char.length,
-      attributes,
-      op: { insert: char, attributes: op.attributes },
-    }));
-  });
-}
-
-// The most changes the diff looks for. A text that differs more is replaced in the middle.
-const MAX_DIFF_EDITS = 600;
-
-type Step = "=" | "-" | "+";
-
-// A shortest list of equal, delete, and insert steps from `a` to `b` (Myers), or
-// null when it needs more than MAX_DIFF_EDITS changes.
-function diff(a: string[], b: string[]): Step[] | null {
-  const [n, m] = [a.length, b.length];
-  const limit = Math.min(n + m, MAX_DIFF_EDITS);
-  const offset = limit + 1;
-  let v = new Int32Array(2 * limit + 3);
-  const trace: Int32Array[] = [];
-  for (let d = 0; d <= limit; d++) {
-    trace.push(v.slice());
-    for (let k = -d; k <= d; k += 2) {
-      let x = k === -d || (k !== d && v[offset + k - 1] < v[offset + k + 1]) ? v[offset + k + 1] : v[offset + k - 1] + 1;
-      let y = x - k;
-      while (x < n && y < m && a[x] === b[y]) (x++, y++);
-      v[offset + k] = x;
-      if (x >= n && y >= m) return backtrack(trace, d, n, m, offset);
+  const units: Unit[] = [];
+  const attributes: Attributes = {};
+  for (let item = text._start; item !== null; item = item.right) {
+    if (item.deleted) continue;
+    const { client, clock } = item.id;
+    const copy = () => ({ ...attributes });
+    const format = () => (Object.keys(attributes).length > 0 ? { attributes: copy() } : {});
+    if (item.content instanceof Y.ContentFormat) {
+      const { key, value } = item.content;
+      if (value === null) delete attributes[key];
+      else attributes[key] = value;
+    } else if (item.content instanceof Y.ContentString) {
+      let offset = 0;
+      for (const char of item.content.str.match(/[\uD800-\uDBFF][\uDC00-\uDFFF]|[^]/g) ?? []) {
+        units.push({ id: `${client}:${clock + offset}`, length: char.length, attributes: copy(), op: { insert: char, ...format() } });
+        offset += char.length;
+      }
+    } else if (item.content instanceof Y.ContentEmbed || item.content instanceof Y.ContentType) {
+      // A plain embed, or a Yjs type embedded in the text.
+      const embed = item.content instanceof Y.ContentEmbed ? item.content.embed : (item.content.type as unknown as object);
+      units.push({ id: `${client}:${clock}`, length: 1, attributes: copy(), op: { insert: embed, ...format() } });
     }
   }
-  return null;
-}
-
-function backtrack(trace: Int32Array[], found: number, n: number, m: number, offset: number): Step[] {
-  const steps: Step[] = [];
-  let [x, y] = [n, m];
-  for (let d = found; d > 0; d--) {
-    const before = trace[d];
-    const k = x - y;
-    const previousK = k === -d || (k !== d && before[offset + k - 1] < before[offset + k + 1]) ? k + 1 : k - 1;
-    const [previousX, previousY] = [before[offset + previousK], before[offset + previousK] - previousK];
-    while (x > previousX && y > previousY) (steps.push("="), x--, y--);
-    steps.push(x === previousX ? "+" : "-");
-    [x, y] = [previousX, previousY];
-  }
-  while (x > 0 && y > 0) (steps.push("="), x--, y--);
-  return steps.reverse();
+  return units;
 }
 
 // What to set on a unit with `from` formatting to give it `to` formatting. Null removes a key.
@@ -136,39 +110,35 @@ function insertRuns(units: Unit[]): Delta[] {
   return runs;
 }
 
-// Makes `text` hold what `target` holds. A diff keeps the units that match, so
-// they keep their authors and only their formatting changes. The rest is
-// deleted and inserted again. A text that differs in more than MAX_DIFF_EDITS
-// places is replaced between its shared start and end.
+// Makes `text` hold what `target` holds. Both are states of one document, so a
+// unit with the same id in both is the same text: it stays, with its author, and
+// only its formatting can change. Units only the live text has are deleted.
+// Units only the target has were deleted since, so they come back as new text.
 function rewriteText(text: Y.Text, target: Y.Text): void {
   const [now, then] = [unitsOf(text), unitsOf(target)];
-  let head = 0;
-  while (head < now.length && head < then.length && now[head].char === then[head].char) head++;
-  let tail = 0;
-  while (tail < now.length - head && tail < then.length - head && now[now.length - 1 - tail].char === then[then.length - 1 - tail].char) tail++;
-  const [nowMiddle, thenMiddle] = [now.slice(head, now.length - tail), then.slice(head, then.length - tail)];
-  const steps = diff(nowMiddle.map((unit) => unit.char), thenMiddle.map((unit) => unit.char)) ??
-    [...nowMiddle.map((): Step => "-"), ...thenMiddle.map((): Step => "+")];
-  const ops: Delta[] = [...retainWithFormat(now.slice(0, head), then.slice(0, head))];
+  const [nowIds, thenIds] = [new Set(now.map((unit) => unit.id)), new Set(then.map((unit) => unit.id))];
+  const ops: Delta[] = [];
+  const length = (units: Unit[]) => units.reduce((sum, unit) => sum + unit.length, 0);
   let [i, j] = [0, 0];
-  for (let s = 0; s < steps.length; ) {
-    let end = s;
-    while (end < steps.length && steps[end] === steps[s]) end++;
-    const count = end - s;
-    if (steps[s] === "=") {
-      ops.push(...retainWithFormat(nowMiddle.slice(i, i + count), thenMiddle.slice(j, j + count)));
-      [i, j] = [i + count, j + count];
-    } else if (steps[s] === "-") {
-      ops.push({ delete: nowMiddle.slice(i, i + count).reduce((sum, unit) => sum + unit.length, 0) } as unknown as Delta);
-      i += count;
+  while (i < now.length || j < then.length) {
+    const [fromNow, fromThen] = [i, j];
+    if (i < now.length && j < then.length && now[i].id === then[j].id) {
+      while (i < now.length && j < then.length && now[i].id === then[j].id) (i++, j++);
+      ops.push(...retainWithFormat(now.slice(fromNow, i), then.slice(fromThen, j)));
+    } else if (i < now.length && !thenIds.has(now[i].id)) {
+      while (i < now.length && !thenIds.has(now[i].id)) i++;
+      ops.push({ delete: length(now.slice(fromNow, i)) } as unknown as Delta);
+    } else if (j < then.length && !nowIds.has(then[j].id)) {
+      while (j < then.length && !nowIds.has(then[j].id)) j++;
+      ops.push(...insertRuns(then.slice(fromThen, j)));
     } else {
-      ops.push(...insertRuns(thenMiddle.slice(j, j + count)));
-      j += count;
+      // The two texts disagree on the order of shared units. Yjs never does that,
+      // so replace what is left whole and keep the result right.
+      ops.push({ delete: length(now.slice(i)) } as unknown as Delta, ...insertRuns(then.slice(j)));
+      break;
     }
-    s = end;
   }
-  ops.push(...retainWithFormat(now.slice(now.length - tail), then.slice(then.length - tail)));
-  text.applyDelta(ops);
+  text.applyDelta(ops.filter((op) => !("delete" in op && op.delete === 0)));
 }
 
 // Makes the live document hold the content of an older state, as one new

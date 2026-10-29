@@ -80,9 +80,13 @@ async function launchWorker(vars: Record<string, string>, persist: string): Prom
   const http = `http://127.0.0.1:${port}`;
   const deadline = Date.now() + 90_000;
   for (;;) {
-    if (child.exitCode !== null) throw new Error(`wrangler dev exited:\n${log}`);
+    if (child.exitCode !== null) {
+      forget();
+      throw new Error(`wrangler dev exited:\n${log}`);
+    }
     if (Date.now() > deadline) {
       // A run that stays alive would hold its sockets against the retry.
+      forget();
       killGroup();
       throw new Error(`wrangler dev not ready:\n${log}`);
     }
