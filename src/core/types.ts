@@ -72,7 +72,7 @@ export const SNAPSHOT_NAME_PATTERN = /^(?!\.{1,2}$)[A-Za-z0-9._-]{1,64}$/;
 export const MAX_SNAPSHOTS = 50;
 
 // The sync server port. The Cloudflare adapter uses Durable Objects.
-// A Node Yjs server on any host can implement the same two methods.
+// A Node Yjs server on any host can implement the same methods.
 export interface Realtime {
   connect(docId: string, request: Request, grant: Grant): Promise<Response>;
   meta(docId: string): Promise<DocMeta>;

@@ -14,7 +14,9 @@ read the migration note and the changed list before you upgrade. The Cloudflare 
 
 ### Migration for adapter authors
 
-Implement each method below. Import `Realtime`, `Grant`, and `Role` from `agentic-realtime`.
+Implement each method below. Import the types (`Realtime`, `Grant`, `Principal`,
+`Role`, `DocMeta`, `SnapshotInfo`) from `agentic-realtime`. `attribution` returns
+the shape of `AttributionLog.labeled()`, which the package also exports.
 
 - `revoke(docId, principalId)`: close every open socket of the principal, and
   refuse it from now on. Resolve with `{ closed, stored }`. `closed` counts the
@@ -41,6 +43,8 @@ Implement each method below. Import `Realtime`, `Grant`, and `Role` from `agenti
 - `attribution(docId, snapshot?)`: resolve with the log of who sent which
   content, now or as of a named snapshot. Resolve with `null` when the snapshot
   has no log.
+- Documents that 0.1.0 stored have no attribution log. Blame shows no author for
+  text written before 0.2.0, and it does not flag that history is missing.
 - An export holds the content in clear text. Treat the stream as personal data.
   Do not log it.
 - Test your adapter against the end-to-end suite in `e2e/`. The
@@ -50,7 +54,8 @@ Implement each method below. Import `Realtime`, `Grant`, and `Role` from `agenti
 
 - `Authorize` gets a third argument, `env`, with the Worker bindings and
   variables. Existing hosts still compile.
-- A principal id longer than 256 characters is refused.
+- A principal id longer than 256 characters makes `assertGrant` throw. The request
+  then fails with HTTP 500, as a bad grant did in 0.1.0.
 - A snapshot name of `.` or `..` is refused. Names still match
   `SNAPSHOT_NAME_PATTERN`.
 
