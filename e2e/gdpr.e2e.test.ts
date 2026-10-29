@@ -165,18 +165,6 @@ describe("export and delete, under wrangler dev", () => {
     ]);
   });
 
-  // Best effort: the race rarely lands in the closing window, so this passes with or without the guard.
-  test("a write that races an erase does not survive it", async () => {
-    const [writer, reader] = [await join("closing", "editor"), await join("closing", "editor2")];
-    await append(writer, "old");
-    await until(() => text(reader) === "old", "the reader to see the edit");
-    // The write races the erase. Nothing it sends may remain after the erase.
-    await Promise.all([append(writer, "late"), deleteDocument(target("editor2"), "closing")]);
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    expect(await meta("closing")).toMatchObject({ updates: 0, compactions: 0, contributors: [] });
-    expect(text(await join("closing", "editor2"))).toBe("");
-  });
-
   test("the host can delete a document too", async () => {
     await fill("by-host");
     const result = await deleteDocumentAsHost(host(), "by-host");

@@ -217,10 +217,10 @@ export is JSON lines, one record each, sent as the room reads its storage:
 | `state` | `base64`: the whole document as one Yjs update. |
 | `roots` | Each root type as plain JSON. |
 | `authors` | Everyone who wrote, with a `machine` label. |
-| `caps` | The host's caps and bans: `principalId` and `cap`, a role or `revoked`. |
+| `caps` | The host's caps and bans: `principalId` and `cap`, a role or `revoked`. It can name principals who never wrote, and owners can read it. |
 | `attribution` | The log of who sent which content. |
 | `update` | One update that compaction has not folded yet: `seq`, `at`, `author`, `base64`. |
-| `snapshot` | A named snapshot: `name`, `at`, `author`, `base64`, and its `attribution`. |
+| `snapshot` | A named snapshot: `name`, `at`, `bytes`, `author`, `base64`, and its `attribution`. `base64` and `attribution` are `null` when the stored state or log is missing. |
 
 A delete closes every socket with code 4004. It removes the updates, the base, the
 snapshots, the attribution logs, the caps and bans, and the timer. The document id

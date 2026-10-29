@@ -4,15 +4,30 @@
 
 This release changes the `Realtime` port. If you wrote your own adapter, read
 the migration note before you upgrade. The Cloudflare adapter,
-`createDurableObjectRealtime`, already has the new methods.
+`createDurableObjectRealtime`, already has every method.
 
 ### Breaking
 
-- The `Realtime` port has two new required methods: `erase(docId)` and
-  `exportHistory(docId)`. An adapter without them does not type-check.
+- The `Realtime` port has six methods that 0.1.0 did not have: `revoke`,
+  `updateRole`, `roleFor`, `erase`, `exportHistory`, and `attribution`. An
+  adapter written for 0.1.0 does not type-check until it adds them.
 
 ### Migration for adapter authors
 
+Implement each method below. The types are in `src/core/types.ts`.
+
+- `revoke(docId, principalId)`: close every open socket of the principal, and
+  refuse it from now on. Resolve with `{ closed, stored }`. `closed` counts the
+  sockets. Sockets close even when the document holds the most bans. Then
+  `stored` is `false`, and a new connection is not refused. Report that to the
+  host.
+- `updateRole(docId, principalId, role)`: cap the principal's role on the
+  open sockets too, so a downgraded editor is read-only at once. A `null` role
+  lifts the cap or the ban. Resolve with `false` when the document holds the
+  most caps.
+- `roleFor(docId, grant)`: resolve with the role after the cap, or `null` when
+  the principal is revoked. A cap that is not a known role counts as revoked.
+  Keep that rule, so bad stored data denies access.
 - `erase(docId)`: delete all stored data of the document. That is the updates,
   the base state, the snapshots, the attribution logs, the caps and bans, and
   any timer. Close every open socket of the document. Resolve with
@@ -23,13 +38,29 @@ the migration note before you upgrade. The Cloudflare adapter,
   types are in the README under "Export and delete a document". Every `update`
   and `snapshot` record keeps the author kind. Do not drop records, and do not
   label a machine author as a person.
+- `attribution(docId, snapshot?)`: resolve with the log of who sent which
+  content, now or as of a named snapshot. Resolve with `null` when the snapshot
+  has no log.
 - An export holds the content in clear text. Treat the stream as personal data.
   Do not log it.
 - Test your adapter against the end-to-end suite in `e2e/`. The
   `gdpr.e2e.test.ts` cases cover erase and export.
 
+### Changed
+
+- `Authorize` gets a third argument, `env`, with the Worker bindings and
+  variables. Existing hosts still compile.
+- A principal id longer than 256 characters is refused. The check is
+  `MAX_PRINCIPAL_ID_LENGTH`.
+- A snapshot name of `.` or `..` is refused. Names still match
+  `SNAPSHOT_NAME_PATTERN`.
+
 ### Added
 
+- Live revocation and role caps (see the README features list).
+- Attribution: who sent which content, and `blame` in the SDK and the CLI.
+- Export and delete for owners and for the host.
+- A runnable example host with token sign-in (`npm run example`).
 - The export has a `caps` line. It lists the host's caps and bans, one entry
   per principal, as `principalId` and `cap`. The format `version` stays `1`.
   Ignore line types you do not know.
@@ -38,5 +69,5 @@ the migration note before you upgrade. The Cloudflare adapter,
 ### Fixed
 
 - A socket that is closing cannot write into the document. An erase, a
-  revoke, or a reauthorization closes the socket first, so its late updates
-  are dropped.
+  revoke, or a host call that cuts a principal off closes the socket first.
+  Its late updates are dropped.
