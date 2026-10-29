@@ -156,20 +156,23 @@ async function* records(response: Response): AsyncGenerator<ExportRecord> {
   if (response.body === null) return;
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
-  let pending = "";
+  // The unfinished line so far. Each chunk is searched only for its own
+  // newlines, so a long line costs time in proportion to its length.
+  let partial = "";
   try {
     for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
-      pending += decoder.decode(chunk.value, { stream: true });
-      let start = 0;
-      for (let end = pending.indexOf("\n", start); end !== -1; end = pending.indexOf("\n", start)) {
-        const line = pending.slice(start, end);
-        start = end + 1;
+      const text = decoder.decode(chunk.value, { stream: true });
+      let from = 0;
+      for (let end = text.indexOf("\n"); end !== -1; end = text.indexOf("\n", from)) {
+        const line = partial + text.slice(from, end);
+        partial = "";
+        from = end + 1;
         if (line !== "") yield JSON.parse(line) as ExportRecord;
       }
-      pending = pending.slice(start);
+      partial += text.slice(from);
     }
-    pending += decoder.decode();
-    if (pending !== "") yield JSON.parse(pending) as ExportRecord;
+    partial += decoder.decode();
+    if (partial !== "") yield JSON.parse(partial) as ExportRecord;
   } finally {
     // A caller that stops early must not leave the connection open.
     await reader.cancel().catch(() => {});

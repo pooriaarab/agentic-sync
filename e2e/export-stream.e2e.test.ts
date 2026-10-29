@@ -36,9 +36,13 @@ describe("export of a large history", () => {
     for await (const record of exportDocumentStream(target("editor2"), "large")) streamed.push(record);
     const buffered = await exportDocument(target("editor2"), "large");
 
-    // The export time differs between the two calls, so compare the rest.
+    // The export time differs between the calls, so compare the rest. The
+    // raw body is split by hand, so the check does not rely on the SDK parser.
+    const raw = await (await fetch(`${server.http}/api/v1/docs/large/export?token=editor2`)).text();
+    const reference = raw.split("\n").filter(Boolean).map((line) => JSON.parse(line) as ExportRecord);
     expect(streamed.map((record) => record.type)).toEqual(buffered.map((record) => record.type));
-    expect(streamed.slice(1)).toEqual(buffered.slice(1));
+    expect(streamed.slice(1)).toEqual(reference.slice(1));
+    expect(buffered.slice(1)).toEqual(reference.slice(1));
 
     const state = new Y.Doc();
     Y.applyUpdate(state, fromBase64(streamed.find((record) => record.type === "state")!.base64));

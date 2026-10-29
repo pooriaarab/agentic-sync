@@ -217,7 +217,8 @@ await deleteDocument({ server, token: ownerToken }, "notes"); // cannot be undon
 `exportDocumentAsHost` and `deleteDocumentAsHost` take `{ server, secret }` instead.
 `exportDocument` returns every record at once, so it holds the whole export in memory.
 For a large history, use `exportDocumentStream` or `exportDocumentStreamAsHost`. They
-yield one record at a time, as the response arrives:
+yield one record at a time, as the response arrives. The request starts when you ask for
+the first record. A refusal is thrown then, not when you call the function:
 
 ```ts
 import { exportDocumentStream } from "agentic-realtime/sdk";

@@ -56,6 +56,25 @@ describe("exportDocumentStream", () => {
     expect(await collectAll(exportDocumentStream(target(), "doc"))).toEqual(records);
   });
 
+  test("a record of many MiB in small chunks is read in linear time", async () => {
+    // A parser that searched the whole unfinished line for each chunk took
+    // tens of seconds for this record. A linear one takes well under one.
+    const big = { type: "state", base64: "A".repeat(32 * 1024 * 1024) };
+    const bytes = line(big);
+    respond = async (res) => {
+      res.writeHead(200);
+      for (let i = 0; i < bytes.length; i += 64 * 1024) {
+        res.write(bytes.slice(i, i + 64 * 1024));
+        await pause();
+      }
+      res.end();
+    };
+    const started = Date.now();
+    const records = await collectAll(exportDocumentStream(target(), "doc"));
+    expect(Date.now() - started).toBeLessThan(3000);
+    expect(records).toEqual([big]);
+  }, 60_000);
+
   test("a multi-byte character split across chunks decodes", async () => {
     const records = [{ type: "roots", roots: { body: "café 🙂 naïve" } }];
     const bytes = Buffer.from(records.map(line).join(""), "utf8");
