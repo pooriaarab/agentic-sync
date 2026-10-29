@@ -38,6 +38,8 @@ export {
   encodeAwarenessUpdate,
 } from "./core/awareness.js";
 export type { AwarenessEntry } from "./core/awareness.js";
+export { AWAY_STATES, AwayTracker, isAwayState, readAwayState } from "./core/away.js";
+export type { AwayOptions, AwayState } from "./core/away.js";
 export {
   DARK_BACKGROUND,
   GRAPHIC_CONTRAST,

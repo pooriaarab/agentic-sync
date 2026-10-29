@@ -13,6 +13,7 @@ import {
   updateMessage,
 } from "../core/protocol.js";
 import { restoreState } from "../core/history.js";
+import { AwayTracker, readAwayState, type AwayState } from "../core/away.js";
 import { peerColor, safePeerColor } from "../core/colors.js";
 import { assertSafePeerName, displayPeerName } from "../core/names.js";
 import { isMachineKind, type PrincipalKind, type SnapshotInfo } from "../core/types.js";
@@ -23,12 +24,16 @@ export interface Presence {
   name: string;
   color: string;
   cursor: unknown;
+  // Set when the client has an away tracker. See AwayState.
+  away?: AwayState;
 }
 
 // Another peer. The server stamps `kind` from that peer's grant, so a
 // client cannot change it. An agent always shows as an agent.
-export interface Peer extends Presence {
+export interface Peer extends Omit<Presence, "away"> {
   clientId: number;
+  // "unknown" for a peer that does not report it.
+  away: AwayState | "unknown";
   kind: PrincipalKind;
   // True for every kind except a person. Show it in the UI.
   machine: boolean;
@@ -48,6 +53,9 @@ export interface ConnectOptions {
   headers?: Record<string, string>;
   doc?: Y.Doc;
   presence?: Pick<Presence, "name"> & Partial<Presence>;
+  // Report idle and hidden to the peers. Feed it with `markActive` and
+  // `setHidden`, or use `watchPageAway` in a browser. Needs `presence`.
+  away?: { idleAfterSeconds: number };
   timeoutMs?: number;
   // Reconnect after a drop, with delays that double up to maxMs.
   reconnect?: { initialMs?: number; maxMs?: number };
@@ -79,6 +87,7 @@ export class SyncClient {
   private resolveClosed!: () => void;
   private readonly closed = new Promise<void>((resolve) => (this.resolveClosed = resolve));
   private opened!: Promise<void>;
+  private awayTracker?: AwayTracker;
 
   private constructor(options: ConnectOptions) {
     this.options = options;
@@ -100,6 +109,13 @@ export class SyncClient {
       const name = assertSafePeerName(options.presence.name);
       const { color = peerColor(name), cursor = null } = options.presence;
       this.awareness.setLocalState({ name, color, cursor } satisfies Presence);
+    }
+    if (options.away && options.presence) {
+      this.awayTracker = new AwayTracker({
+        idleAfterSeconds: options.away.idleAfterSeconds,
+        onChange: (away) => this.setPresence({ away }),
+      });
+      this.setPresence({ away: this.awayTracker.state });
     }
     this.open();
   }
@@ -242,8 +258,23 @@ export class SyncClient {
       .map(([clientId, state]) => {
         const peer = state as Omit<Peer, "clientId" | "machine">;
         const name = displayPeerName(peer.name);
-        return { clientId, ...peer, name, color: safePeerColor(peer.color, name), machine: isMachineKind(peer.kind) };
+        return { clientId, ...peer, name, color: safePeerColor(peer.color, name), away: readAwayState(peer.away), machine: isMachineKind(peer.kind) };
       });
+  }
+
+  // Your own away state, or undefined if you passed no `away` option.
+  get away(): AwayState | undefined {
+    return this.awayTracker?.state;
+  }
+
+  // Tells the tracker that you did something. It does nothing without `away`.
+  markActive(): void {
+    this.awayTracker?.activity();
+  }
+
+  // Tells the tracker that your page is hidden or visible again.
+  setHidden(hidden: boolean): void {
+    this.awayTracker?.setHidden(hidden);
   }
 
   // Calls you when anyone joins, leaves, or changes presence. Returns a
@@ -291,6 +322,7 @@ export class SyncClient {
   async disconnect(): Promise<void> {
     this.stopped = true;
     clearTimeout(this.retry);
+    this.awayTracker?.stop();
     awarenessProtocol.removeAwarenessStates(this.awareness, [this.doc.clientID], "disconnect");
     this.awareness.destroy();
     if (this.socket.readyState === 3) this.resolveClosed();

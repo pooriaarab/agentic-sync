@@ -1,5 +1,6 @@
 import * as decoding from "lib0/decoding";
 import * as encoding from "lib0/encoding";
+import { isAwayState } from "./away.js";
 import { isSafePeerName } from "./names.js";
 import type { PrincipalKind } from "./types.js";
 
@@ -185,6 +186,7 @@ export class AwarenessRelay {
       // An unsafe name is left out, not punished: an older client keeps
       // its socket and its peers show the fallback name.
       if ("name" in state && !isSafePeerName(state.name)) delete state.name;
+      if ("away" in state && !isAwayState(state.away)) delete state.away;
       state.kind = identity.kind;
       if (identity.name !== undefined && isSafePeerName(identity.name)) state.name = identity.name;
       else if (identity.name !== undefined) delete state.name;
