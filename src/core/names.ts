@@ -30,7 +30,9 @@ export function isSafePeerName(name: unknown): name is string {
 }
 
 // Throws for a name that is not safe. Use it on input you must refuse.
-export function assertSafePeerName(name: unknown): string {
+// It first converts a string to NFC, and returns the converted name.
+export function assertSafePeerName(input: unknown): string {
+  const name = typeof input === "string" ? input.normalize("NFC") : input;
   if (!isSafePeerName(name)) {
     throw new Error(`peer name must be 1 to ${MAX_NAME_LENGTH} letters, digits, spaces, or . _ ' ’ ( ) -`);
   }

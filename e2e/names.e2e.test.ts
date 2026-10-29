@@ -49,3 +49,15 @@ test("an unsafe name from a raw socket is dropped, the socket stays, and peers s
   await watcher.disconnect();
   raw.close();
 });
+
+test("an unsafe host name is dropped from the relayed state", async () => {
+  const host = new Peer(wsFor("names-host", "hostile"));
+  await host.synced;
+  host.setPresence(81, 1, { name: "Mallory", color: "#000" });
+  const bare = new Peer(wsFor("names-host", "editor2"));
+  await bare.synced;
+  await until(() => bare.awareness.some((e) => e.id === 81), "the relayed entry");
+  expect(JSON.parse(bare.awareness.find((e) => e.id === 81)!.state)).toEqual({ color: "#000", kind: "human" });
+  host.close();
+  bare.close();
+});

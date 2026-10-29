@@ -39,7 +39,6 @@ describe("peer names", () => {
     "only punctuation": "...",
     "empty": "",
     "zalgo": "A\u0300\u0301\u0302\u0303\u0304",
-    "not NFC": "e\u0301".normalize("NFD") + "x",
     "lone surrogate": "A\uD800",
     "too long": "a".repeat(MAX_NAME_LENGTH + 1),
     "long run of marks": "a" + "\u0301".repeat(2000),
@@ -52,6 +51,15 @@ describe("peer names", () => {
 
   test.each([undefined, null, 5, {}, ["Ana"]])("rejects the non-string %j", (value) => {
     expect(isSafePeerName(value)).toBe(false);
+  });
+
+  test("isSafePeerName refuses a name that is not NFC", () => {
+    expect(isSafePeerName("Zoe\u0308")).toBe(false);
+  });
+
+  test("assertSafePeerName converts to NFC and names the rule for a non-string", () => {
+    expect(assertSafePeerName("Zoe\u0308")).toBe("Zo\u00EB");
+    expect(() => assertSafePeerName(5)).toThrow(/peer name must be/);
   });
 
   test("accepts a name of exactly the cap, counting characters", () => {

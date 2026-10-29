@@ -186,7 +186,8 @@ export class AwarenessRelay {
       // its socket and its peers show the fallback name.
       if ("name" in state && !isSafePeerName(state.name)) delete state.name;
       state.kind = identity.kind;
-      if (identity.name !== undefined) state.name = identity.name;
+      if (identity.name !== undefined && isSafePeerName(identity.name)) state.name = identity.name;
+      else if (identity.name !== undefined) delete state.name;
       const stamped = { id: entry.id, clock: entry.clock, state: JSON.stringify(state) };
       this.own(owner, entry.id);
       this.entries.set(entry.id, stamped);
