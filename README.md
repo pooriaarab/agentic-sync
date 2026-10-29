@@ -214,8 +214,20 @@ const records = await exportDocument({ server, token: ownerToken }, "notes");
 await deleteDocument({ server, token: ownerToken }, "notes"); // cannot be undone
 ```
 
-`exportDocumentAsHost` and `deleteDocumentAsHost` take `{ server, secret }` instead. An
-export is JSON lines, one record each, sent as the room reads its storage:
+`exportDocumentAsHost` and `deleteDocumentAsHost` take `{ server, secret }` instead.
+`exportDocument` returns every record at once, so it holds the whole export in memory.
+For a large history, use `exportDocumentStream` or `exportDocumentStreamAsHost`. They
+yield one record at a time, as the response arrives:
+
+```ts
+import { exportDocumentStream } from "agentic-realtime/sdk";
+
+for await (const record of exportDocumentStream({ server, token: ownerToken }, "notes")) {
+  // handle one record, then go on to the next
+}
+```
+
+An export is JSON lines, one record each, sent as the room reads its storage:
 
 | `type` | Holds |
 | --- | --- |

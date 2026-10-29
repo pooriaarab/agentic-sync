@@ -10,6 +10,10 @@
   working. A host name from `authorize` follows the same set: peers show
   `Unknown` for another one. New exports: `isSafePeerName`,
   `assertSafePeerName`, `displayPeerName`, `MAX_NAME_LENGTH`, `FALLBACK_NAME`.
+- `exportDocumentStream` and `exportDocumentStreamAsHost` in `agentic-realtime/sdk`
+  yield the export one record at a time, as the response arrives. Use them for a
+  large history. `exportDocument` and `exportDocumentAsHost` keep their return
+  value, and they still hold the whole export in memory.
 
 ## 0.2.0
 
