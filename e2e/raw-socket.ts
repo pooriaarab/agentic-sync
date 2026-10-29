@@ -15,7 +15,8 @@ function acceptOf(head: string): string | undefined {
 // A WebSocket client that writes frames and never reads them. It never
 // answers a close frame, so the server sees a socket that is closing and
 // still open at the TCP level. A stock client would answer the close at
-// once, and the window would close before the test could use it.
+// once, and the window would close before the test could use it. It sends
+// one frame of up to 65535 bytes, which is enough for the test updates.
 export class RawSocket {
   private constructor(private readonly socket: Socket) {}
 
@@ -56,10 +57,13 @@ export class RawSocket {
         } else if (acceptOf(head) !== accept) {
           fail(new Error("the upgrade has a wrong accept key"));
         } else {
+          socket.off("end", onEnd);
           resolve(new RawSocket(socket));
         }
       };
       socket.on("data", onData);
+      const onEnd = () => fail(new Error("the server closed the connection during the upgrade"));
+      socket.on("end", onEnd);
       socket.on("error", (error) => fail(error));
     });
   }
