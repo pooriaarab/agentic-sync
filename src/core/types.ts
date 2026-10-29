@@ -42,9 +42,11 @@ export function effectiveRole(granted: Role, cap: unknown): Role | null {
 
 // The host owns auth. It returns a grant for this request and document,
 // or null to refuse. This package never reads a credential itself.
+// `env` holds the Worker bindings and variables, for the secrets of your sign-in.
 export type Authorize = (
   request: Request,
   docId: string,
+  env: Record<string, unknown>,
 ) => Grant | null | Promise<Grant | null>;
 
 export interface Contributor extends Principal {

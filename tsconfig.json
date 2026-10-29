@@ -13,5 +13,5 @@
     "types": ["node"]
   },
   "include": ["src", "e2e", "tsup.config.ts", "vitest.config.ts"],
-  "exclude": ["src/worker.ts", "src/cloudflare", "e2e/worker"]
+  "exclude": ["src/worker.ts", "src/cloudflare", "e2e/worker", "examples/host"]
 }

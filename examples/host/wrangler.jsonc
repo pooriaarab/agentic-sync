@@ -1,0 +1,17 @@
+{
+  // Run it from the repository root: npm run build && npm run example
+  "name": "agentic-realtime-host-example",
+  "main": "worker.ts",
+  "compatibility_date": "2026-01-01",
+  "durable_objects": {
+    "bindings": [{ "name": "SYNC_ROOM", "class_name": "SyncRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SyncRoom"] }],
+  // HOST_TOKENS and SYNC_ADMIN_SECRET are secrets. Put them in .dev.vars here, and
+  // in `wrangler secret put` when you deploy. To pin documents to the EU, add
+  // "vars": { "SYNC_JURISDICTION": "eu" } before you deploy. Local wrangler dev
+  // cannot place objects in a jurisdiction, so leave it out while you try this.
+  // In your own project, install agentic-realtime and delete this block. Here the
+  // package is the repository itself, so the imports point at the build in dist/.
+  "alias": { "agentic-realtime/worker": "../../dist/worker.js" }
+}

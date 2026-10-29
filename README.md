@@ -69,7 +69,10 @@ export default createSyncWorker({
 });
 ```
 
-Copy `wrangler.jsonc` for the Durable Object binding and the migration.
+`authorize` also gets the Worker `env` as its third argument, for the secrets of your
+sign-in. Copy `wrangler.jsonc` for the Durable Object binding and the migration.
+The default Worker refuses every document. To see a working host, run
+[`examples/host`](examples/host/README.md). It signs callers in with bearer tokens.
 
 | Route | Use |
 | --- | --- |

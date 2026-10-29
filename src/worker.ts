@@ -14,6 +14,8 @@ import {
   type Authorize,
 } from "./core/types.js";
 
+export { assertGrant } from "./core/types.js";
+export type { Authorize, Grant, Principal, Role } from "./core/types.js";
 export { SyncRoom, createSyncRoom } from "./cloudflare/room.js";
 export type { Reauthorize } from "./cloudflare/room.js";
 export { createDurableObjectRealtime } from "./cloudflare/realtime.js";
@@ -70,7 +72,7 @@ export function createSyncWorker(options: SyncWorkerOptions): ExportedHandler<Sy
   // Checks the document id, then asks the host who the caller is.
   const open = async (request: Request, env: SyncEnv, id: string) => {
     if (!DOC_ID_PATTERN.test(id)) return refused(400, "INVALID_DOC_ID");
-    const granted = await options.authorize(request, id);
+    const granted = await options.authorize(request, id, env as unknown as Record<string, unknown>);
     if (granted === null) return refused(401, "UNAUTHORIZED");
     const realtime = realtimeFor(env);
     const checked = assertGrant(granted);

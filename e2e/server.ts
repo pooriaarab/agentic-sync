@@ -30,10 +30,11 @@ export function freePort(): Promise<number> {
 export async function startWorker(
   vars: Record<string, string> = {},
   persist: string = mkdtempSync(join(tmpdir(), "agentic-realtime-e2e-")),
+  config = "e2e/worker/wrangler.jsonc",
 ): Promise<Server> {
   for (let attempt = 1; ; attempt++) {
     try {
-      return await launchWorker(vars, persist);
+      return await launchWorker(vars, persist, config);
     } catch (error) {
       if (attempt >= 4 || !String(error).includes("Address already in use")) throw error;
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -41,11 +42,11 @@ export async function startWorker(
   }
 }
 
-async function launchWorker(vars: Record<string, string>, persist: string): Promise<Server> {
+async function launchWorker(vars: Record<string, string>, persist: string, config: string): Promise<Server> {
   const port = await freePort();
   const child: ChildProcess = spawn(
     "npx",
-    ["wrangler", "dev", "--config", "e2e/worker/wrangler.jsonc", "--ip", "127.0.0.1",
+    ["wrangler", "dev", "--config", config, "--ip", "127.0.0.1",
       "--port", String(port), "--persist-to", persist,
       ...Object.entries(vars).flatMap(([key, value]) => ["--var", `${key}:${value}`])],
     // Its own process group, so one kill ends npx, wrangler, and workerd. A
