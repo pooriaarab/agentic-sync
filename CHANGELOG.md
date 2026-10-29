@@ -22,7 +22,7 @@ Otherwise, upgrading from 0.4.2 needs no code change.
 
 ### Internal
 
-- Publish runs on one ref wait for each other. A running publish is not cancelled.
+- A new publish on the same ref waits for the running one. A running publish is not cancelled.
 
 ## 0.4.2
 
