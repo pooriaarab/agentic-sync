@@ -22,7 +22,12 @@ its NFC form: `isSafePeerName(name.normalize("NFC"))`.
   drops an unsafe name from the presence it relays and keeps the socket. An
   older client keeps its socket, but a peer with an unsafe name reaches it with
   no `name`. Upgrade the clients before you rely on a name. A host name from
-  `authorize` follows the same set: peers show `Unknown` for another one.
+  `authorize` follows the same set, and the server does not convert it. Return
+  it in NFC, with `name.normalize("NFC")`. Otherwise peers show `Unknown` for it.
+- The server owns the top-level `away` key of presence. It drops a value that is
+  not `active`, `idle`, or `hidden`. A client that sets its own `away` field
+  outside `SyncClient`, such as a plain `y-protocols` client, sees that field
+  dropped.
 - Peer colors that are not `#rrggbb`, or that are hard to see, are replaced.
   This includes CSS color names and the 0.2.0 default color, which was an
   `hsl(...)` string. A peer shows a different color after you upgrade. To keep
