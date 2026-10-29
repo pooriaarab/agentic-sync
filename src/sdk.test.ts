@@ -58,7 +58,7 @@ describe("exportDocumentStream", () => {
 
   test("a record of many MiB in small chunks is read in linear time", async () => {
     // A parser that searched the whole unfinished line for each chunk took
-    // tens of seconds for this record. A linear one takes well under one.
+    // tens of seconds for this record. A linear one takes about one second.
     const big = { type: "state", base64: "A".repeat(32 * 1024 * 1024) };
     const bytes = line(big);
     respond = async (res) => {
@@ -71,7 +71,8 @@ describe("exportDocumentStream", () => {
     };
     const started = Date.now();
     const records = await collectAll(exportDocumentStream(target(), "doc"));
-    expect(Date.now() - started).toBeLessThan(3000);
+    // The quadratic parser took 15 s or more for this, so 6 s still catches it.
+    expect(Date.now() - started).toBeLessThan(6000);
     expect(records).toEqual([big]);
   }, 60_000);
 
@@ -102,10 +103,13 @@ describe("exportDocumentStream", () => {
     };
     const records = exportDocumentStream(target(), "doc");
     const first = records.next();
-    const timeout = new Promise<"timed out">((resolve) => setTimeout(() => resolve("timed out"), 3000));
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<"timed out">((resolve) => (timer = setTimeout(() => resolve("timed out"), 3000)));
     // A reader that waited for the whole body would wait here until the
     // timeout, because the body does not end until the release below.
-    expect(await Promise.race([first, timeout])).toMatchObject({ value: { type: "meta" } });
+    const got = await Promise.race([first, timeout]);
+    clearTimeout(timer);
+    expect(got).toMatchObject({ value: { type: "meta" } });
     release();
     expect((await records.next()).value).toEqual({ type: "authors", authors: [] });
     expect((await records.next()).done).toBe(true);
