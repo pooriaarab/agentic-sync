@@ -7,8 +7,8 @@
 
 Live edits for people and agents on one document, with offline support.
 
-> Status: 0.1.0 preview. Each feature below has a test. EU placement needs a
-> deployed Worker to verify.
+> Status: 0.1.0 preview. Most features below have an end-to-end test.
+> Hibernation, the no-outbound-calls rule, and EU placement do not.
 
 ## Install
 
@@ -33,7 +33,7 @@ npm install agentic-sync
   A restore is a new edit by you. No stored update or snapshot changes.
 - A CLI and an MCP server, so an agent can join and edit with no code.
 - Storage in the object. Updates append to a log. Every 50 updates (set
-  `SYNC_COMPACT_EVERY`) the log folds into one snapshot.
+  `SYNC_COMPACT_EVERY`, from 1 to 128) the log folds into one snapshot.
 - WebSocket hibernation. An idle document uses no compute.
 - Roles. Owners and editors write. Commenters and viewers only read. The server
   drops their updates and answers with a permission-denied message.

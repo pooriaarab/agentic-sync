@@ -1,6 +1,6 @@
 ---
 name: agentic-sync
-description: Live edits for people and agents on one document, with offline support. Keywords: yjs,crdt,realtime,collaboration,presence,offline,agents,durable-objects,cloudflare,mcp.
+description: "Live edits for people and agents on one document, with offline support. Keywords: yjs,crdt,realtime,collaboration,presence,offline,agents,durable-objects,cloudflare,mcp."
 ---
 
 # agentic-sync
