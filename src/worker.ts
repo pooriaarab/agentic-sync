@@ -103,7 +103,11 @@ export function createSyncWorker(options: SyncWorkerOptions): ExportedHandler<Sy
       return refused(400, "INVALID_SNAPSHOT_NAME");
     }
     const made = await opened.realtime.createSnapshot(id, body.name, opened.grant.principal);
-    return made ? c.json(made, 201) : refused(409, "SNAPSHOT_EXISTS_OR_LIMIT");
+    if (made) return c.json(made, 201);
+    // The room also refuses a principal that was capped after open() ran.
+    const now = await opened.realtime.roleFor(id, opened.grant);
+    if (now === null) return refused(403, "ACCESS_REVOKED");
+    return canWrite(now) ? refused(409, "SNAPSHOT_EXISTS_OR_LIMIT") : refused(403, "READ_ONLY_ROLE");
   });
 
   app.get("/api/v1/docs/:id/snapshots/:name", async (c) => {

@@ -77,7 +77,7 @@ export interface Realtime {
   // The saved state as a Yjs update, or null.
   getSnapshot(docId: string, name: string): Promise<Uint8Array | null>;
   // Closes every socket of the principal and refuses it from now on.
-  // The sockets close even when the document holds the most caps. Then
+  // The sockets close even when the document holds the most bans. Then
   // `stored` is false and a new connection is not refused.
   revoke(docId: string, principalId: string): Promise<{ closed: number; stored: boolean }>;
   // Caps the principal's role, also on sockets that are open now. A null

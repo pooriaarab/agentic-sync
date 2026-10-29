@@ -384,7 +384,9 @@ export class SyncRoom extends DurableObject<RoomEnv> {
     // caps never stops a revoke.
     const ban = cap === "revoked";
     const held = [...this.caps.values()].filter((value) => (value === "revoked") === ban).length;
-    if (!this.caps.has(principalId) && held >= (ban ? MAX_REVOKED : MAX_CAPS)) return false;
+    // A change from one type to the other takes a slot of the new type.
+    const sameType = this.caps.has(principalId) && (this.caps.get(principalId) === "revoked") === ban;
+    if (!sameType && held >= (ban ? MAX_REVOKED : MAX_CAPS)) return false;
     this.caps.set(principalId, cap);
     await this.ctx.storage.put(`cap:${principalId}`, cap);
     return true;

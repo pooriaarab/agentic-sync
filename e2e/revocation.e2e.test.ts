@@ -170,6 +170,7 @@ describe("live revocation under wrangler dev", () => {
     const peer = new Peer(wsUrl(server, "capfull", "editor"));
     await peer.synced;
     const code = closeCodeOf(peer);
+    await revokePrincipal(admin(server), "capfull", "banned");
     const fill = Array.from({ length: 1000 }, (_, i) => `filler-${i}`);
     for (let i = 0; i < fill.length; i += 50) {
       await Promise.all(
@@ -177,6 +178,8 @@ describe("live revocation under wrangler dev", () => {
       );
     }
     await expect(setPrincipalRole(admin(server), "capfull", "one-more", "viewer")).rejects.toThrow("CAP_LIMIT");
+    // Turning a ban into a role cap takes a slot of the full role table.
+    await expect(setPrincipalRole(admin(server), "capfull", "banned", "viewer")).rejects.toThrow("CAP_LIMIT");
     expect(await revokePrincipal(admin(server), "capfull", "person-1")).toEqual({ closed: 1 });
     await until(() => code() !== undefined, "the socket to close");
     expect(code()).toBe(4003);
