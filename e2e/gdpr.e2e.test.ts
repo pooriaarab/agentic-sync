@@ -9,6 +9,7 @@ import {
   exportDocument,
   exportDocumentAsHost,
   revokePrincipal,
+  setPrincipalRole,
   type AdminTarget,
   type Target,
 } from "../src/sdk.js";
@@ -150,6 +151,31 @@ describe("export and delete, under wrangler dev", () => {
     expect(lines.find((l) => l.type === "attribution")).toMatchObject({ authors: [AGENT] });
     expect(lines.filter((l) => l.type === "snapshot")).toEqual([]);
   }, 240_000);
+
+  test("an export holds the caps and the bans", async () => {
+    await fill("caps");
+    await setPrincipalRole(host(), "caps", "person-1", "viewer");
+    await revokePrincipal(host(), "caps", "agent-7");
+    const lines = await exportDocument(target("editor2"), "caps");
+    const caps = lines.find((l) => l.type === "caps");
+    expect(caps).toMatchObject({ type: "caps" });
+    expect([...caps!.caps].sort((a: { principalId: string }, b: { principalId: string }) => a.principalId.localeCompare(b.principalId))).toEqual([
+      { principalId: "agent-7", cap: "revoked" },
+      { principalId: "person-1", cap: "viewer" },
+    ]);
+  });
+
+  // Best effort: the race rarely lands in the closing window, so this passes with or without the guard.
+  test("a write that races an erase does not survive it", async () => {
+    const [writer, reader] = [await join("closing", "editor"), await join("closing", "editor2")];
+    await append(writer, "old");
+    await until(() => text(reader) === "old", "the reader to see the edit");
+    // The write races the erase. Nothing it sends may remain after the erase.
+    await Promise.all([append(writer, "late"), deleteDocument(target("editor2"), "closing")]);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(await meta("closing")).toMatchObject({ updates: 0, compactions: 0, contributors: [] });
+    expect(text(await join("closing", "editor2"))).toBe("");
+  });
 
   test("the host can delete a document too", async () => {
     await fill("by-host");
