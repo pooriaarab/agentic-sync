@@ -1,5 +1,9 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { connect, type Socket } from "node:net";
+
+// The GUID that RFC 6455 adds to the key before it hashes it.
+const ACCEPT_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+const HANDSHAKE_MS = 5000;
 
 // A WebSocket client that writes frames and never reads them. It never
 // answers a close frame, so the server sees a socket that is closing and
@@ -10,6 +14,8 @@ export class RawSocket {
 
   static open(url: string): Promise<RawSocket> {
     const { hostname, port, pathname, search } = new URL(url);
+    const key = randomBytes(16).toString("base64");
+    const accept = createHash("sha1").update(key + ACCEPT_GUID).digest("base64");
     return new Promise((resolve, reject) => {
       const socket = connect(Number(port), hostname, () => {
         socket.write(
@@ -18,24 +24,36 @@ export class RawSocket {
             `Host: ${hostname}:${port}`,
             "Upgrade: websocket",
             "Connection: Upgrade",
-            `Sec-WebSocket-Key: ${randomBytes(16).toString("base64")}`,
+            `Sec-WebSocket-Key: ${key}`,
             "Sec-WebSocket-Version: 13",
             "",
             "",
           ].join("\r\n"),
         );
       });
+      const fail = (error: Error) => {
+        clearTimeout(timer);
+        socket.destroy();
+        reject(error);
+      };
+      const timer = setTimeout(() => fail(new Error("the upgrade timed out")), HANDSHAKE_MS);
       let head = "";
       const onData = (chunk: Buffer) => {
         head += chunk.toString("latin1");
         if (!head.includes("\r\n\r\n")) return;
+        clearTimeout(timer);
         socket.off("data", onData);
         socket.on("data", () => {});
-        if (head.startsWith("HTTP/1.1 101")) resolve(new RawSocket(socket));
-        else reject(new Error(`the upgrade was refused: ${head.split("\r\n")[0]}`));
+        if (!head.startsWith("HTTP/1.1 101")) {
+          fail(new Error(`the upgrade was refused: ${head.split("\r\n")[0]}`));
+        } else if (!head.includes(`Sec-WebSocket-Accept: ${accept}\r\n`)) {
+          fail(new Error("the upgrade has a wrong accept key"));
+        } else {
+          resolve(new RawSocket(socket));
+        }
       };
       socket.on("data", onData);
-      socket.on("error", reject);
+      socket.on("error", (error) => fail(error));
     });
   }
 
