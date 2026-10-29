@@ -14,6 +14,10 @@ with a character outside the safe set must change that name.
   from the presence it relays and keeps the socket, so older clients keep
   working. A host name from `authorize` follows the same set: peers show
   `Unknown` for another one.
+- Peer colors that are not `#rrggbb`, or that are hard to see, are replaced.
+  This includes CSS color names and the 0.2.0 default color, which was an
+  `hsl(...)` string. A peer shows a different color after you upgrade. To keep
+  a color, set a `#rrggbb` color with 3:1 contrast on both pages.
 - `Peer` has a new required field, `away`. Code that builds a `Peer` object
   must add it. Code that only reads `client.peers` does not change.
 
