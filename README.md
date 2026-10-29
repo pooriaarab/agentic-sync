@@ -318,6 +318,47 @@ a Node Yjs server, could implement it. See the changelog for what 0.2.0 added. T
 protocol helpers in `agentic-realtime` (`readMessage`, `AwarenessRelay`) are plain
 TypeScript with no Cloudflare code.
 
+## Run on Firebase
+
+The room keeps its data behind the `RoomStorage` port: `get`, `list` by prefix,
+`put`, `putAll`, `delete`, and `deleteAll`. It matches the way the room uses
+Durable Object storage. The package ships an in-memory adapter and
+`agentic-realtime/firestore`. The Firestore adapter can hold updates,
+snapshots, authorship logs, and role caps and bans, under the same keys the
+room writes today.
+
+```ts
+import { createFirestoreStorage } from "agentic-realtime/firestore";
+import { exportStorage } from "agentic-realtime";
+
+const storage = createFirestoreStorage({
+  projectId: "my-project",
+  docId: "doc-1",
+  fetch: globalThis.fetch,
+  token: () => getAccessToken(), // your service account flow
+});
+await storage.put("cap:principal-1", "revoked");
+const lines = exportStorage(storage); // a stream of JSON lines
+await storage.deleteAll(); // erase the document
+```
+
+The adapter uses the Firestore REST API with `fetch` only. It has no Firebase
+SDK and no secret. You pass the `fetch` and a token, or a function that returns
+one. Leave the token out and set `baseUrl` to `http://<FIRESTORE_EMULATOR_HOST>`
+for the emulator. Each document lives under `agentic_realtime/<id>/kv`. The
+adapter keeps the case of the document id and of every key.
+
+How it is tested: one contract suite, `runStorageContract`, runs against the
+in-memory adapter and the Firestore adapter. By default, the Firestore run uses
+a fake of the REST calls in `src/firestore/fake.ts`. It follows Firestore for
+byte order, atomic commits, and size limits. With `FIRESTORE_EMULATOR_HOST` set,
+the same suite runs against the real emulator. CI uses the fake. Nobody has
+run the emulator yet.
+
+This port moves the storage only. The room still reads and writes Durable
+Object storage directly, and the WebSocket server still runs in a Durable Object. A Node server on Firebase must bring its own socket layer.
+A value must stay under 1 MB, the Firestore document limit.
+
 ## Limits
 
 - One snapshot or update must stay under 2 MB (Durable Object storage limit).
