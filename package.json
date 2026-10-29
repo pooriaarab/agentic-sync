@@ -71,6 +71,7 @@
     "clean": "rm -rf dist",
     "prepack": "npm run build",
     "example": "WRANGLER_SEND_METRICS=false wrangler dev --config examples/host/wrangler.jsonc",
+    "deploy:demo": "npm run build && WRANGLER_SEND_METRICS=false wrangler deploy --config examples/host/wrangler.demo.jsonc",
     "ci:local": "npm run build && npm run typecheck && npm test"
   },
   "dependencies": {

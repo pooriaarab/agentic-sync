@@ -1,0 +1,15 @@
+{
+  // The public demo. Deploy from the repository root: npm run deploy:demo
+  // Secrets HOST_TOKENS and SYNC_ADMIN_SECRET are set with `wrangler secret put`.
+  // They are never in this file.
+  "name": "agentic-sync-demo",
+  "main": "worker.ts",
+  "compatibility_date": "2026-01-01",
+  "workers_dev": true,
+  "durable_objects": {
+    "bindings": [{ "name": "SYNC_ROOM", "class_name": "SyncRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SyncRoom"] }],
+  "vars": { "SYNC_JURISDICTION": "eu" },
+  "alias": { "agentic-realtime/worker": "../../dist/worker.js" }
+}
