@@ -62,6 +62,21 @@ describe("live revocation under wrangler dev", () => {
     expect(await status(server, "gate", "editor")).toBe(200);
   });
 
+  test("admin routes refuse a principal id that the grant rule refuses", async () => {
+    const post = (path: string, body: unknown) =>
+      fetch(`${server.http}/api/v1/admin/docs/gate/${path}`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${SECRET}`, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    for (const principalId of ["ana@example.org", "a".repeat(129)]) {
+      const revoke = await post("revoke", { principalId });
+      expect(revoke.status).toBe(400);
+      expect(await revoke.json()).toEqual({ error: { code: "INVALID_PRINCIPAL_ID" } });
+      expect((await post("role", { principalId, role: "viewer" })).status).toBe(400);
+    }
+  });
+
   test("a missing or short secret turns the admin routes off", async () => {
     const cases: Record<string, string>[] = [{}, { SYNC_ADMIN_SECRET: "short" }];
     for (const vars of cases) {

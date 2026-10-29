@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Breaking for ids outside the rule. A principal id must match the
+  `agentic-identity` rule: 1 to 128 ASCII characters, first an ASCII letter,
+  digit, `_` or `-`, then ASCII letters, digits, `.`, `_` or `-`. Before, any
+  id of up to 256 characters passed. A grant with another id fails with HTTP
+  500. The admin routes (revoke and role) refuse it with
+  `INVALID_PRINCIPAL_ID`. A direct `revoke` or `updateRole` call on the
+  Realtime port throws a `TypeError`.
+- Before you upgrade, map your ids to the rule in `authorize`. Lift every cap
+  and ban stored under an id that breaks the rule. The admin routes refuse that
+  id after the upgrade, and a slot held by such an entry clears only when the
+  document is deleted. To close an open socket of such an id, revoke it, then
+  lift the revoke with a role of `null` just before you deploy. Otherwise the
+  ban stays and holds a slot. A socket that opened before the upgrade stays
+  open until it reconnects.
+- `PRINCIPAL_KINDS` and `PrincipalKind` come from `agentic-identity`. The names
+  and types do not change.
+
 ## 0.4.1
 
 No breaking changes. Upgrading from 0.4.0 needs no code change.

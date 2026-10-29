@@ -8,7 +8,7 @@ import {
   assertGrant,
   canWrite,
   DOC_ID_PATTERN,
-  MAX_PRINCIPAL_ID_LENGTH,
+  isPrincipalId,
   ROLES,
   SNAPSHOT_NAME_PATTERN,
   type Authorize,
@@ -42,9 +42,6 @@ export interface SyncWorkerOptions {
 
 const refused = (status: number, code: string): Response =>
   Response.json({ error: { code } }, { status });
-
-const validPrincipalId = (value: unknown): value is string =>
-  typeof value === "string" && value.length > 0 && value.length <= MAX_PRINCIPAL_ID_LENGTH;
 
 const realtimeFor = (env: SyncEnv) =>
   createDurableObjectRealtime(env.SYNC_ROOM, parseJurisdiction(env.SYNC_JURISDICTION));
@@ -179,7 +176,7 @@ export function createSyncWorker(options: SyncWorkerOptions): ExportedHandler<Sy
     const id = c.req.param("id");
     if (!DOC_ID_PATTERN.test(id)) return refused(400, "INVALID_DOC_ID");
     const body = (await c.req.json().catch(() => null)) as { principalId?: unknown } | null;
-    if (!validPrincipalId(body?.principalId)) return refused(400, "INVALID_PRINCIPAL_ID");
+    if (!isPrincipalId(body?.principalId)) return refused(400, "INVALID_PRINCIPAL_ID");
     const { closed, stored } = await realtimeFor(c.env).revoke(id, body.principalId);
     // The sockets are closed either way. Without a stored ban the principal can return.
     return stored ? c.json({ closed }) : Response.json({ error: { code: "CAP_LIMIT" }, closed }, { status: 409 });
@@ -193,7 +190,7 @@ export function createSyncWorker(options: SyncWorkerOptions): ExportedHandler<Sy
     const body = (await c.req.json().catch(() => null)) as
       | { principalId?: unknown; role?: unknown }
       | null;
-    if (!validPrincipalId(body?.principalId)) return refused(400, "INVALID_PRINCIPAL_ID");
+    if (!isPrincipalId(body?.principalId)) return refused(400, "INVALID_PRINCIPAL_ID");
     const role = body.role;
     if (role !== null && !ROLES.includes(role as (typeof ROLES)[number])) return refused(400, "INVALID_ROLE");
     const stored = await realtimeFor(c.env).updateRole(id, body.principalId, role as (typeof ROLES)[number] | null);
