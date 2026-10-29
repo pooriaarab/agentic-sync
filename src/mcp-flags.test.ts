@@ -55,11 +55,18 @@ describe("help and version never start the server", () => {
 });
 
 describe("an unknown argument fails closed and never starts the server", () => {
-  for (const [file, args] of [["cli.js", ["mcp", "--bogus"]], ["mcp-bin.js", ["--bogus"]]] as [string, string[]][]) {
+  const cases: [string, string[], string][] = [
+    ["cli.js", ["mcp", "--bogus"], "--bogus"],
+    ["mcp-bin.js", ["--bogus"], "--bogus"],
+    ["cli.js", ["mcp", "a", "b"], "\"a\""],
+    ["mcp-bin.js", ["a", "b"], "\"a\""],
+    ["mcp-bin.js", [""], '""'],
+  ];
+  for (const [file, args, named] of cases) {
     test(`${file} ${args.join(" ")} exits 2 within 5 s`, async () => {
       const r = await run(file, args);
       expect(r.code).toBe(2);
-      expect(r.err).toContain("--bogus");
+      expect(r.err).toContain(named);
     });
   }
 });
