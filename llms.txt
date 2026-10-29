@@ -5,6 +5,7 @@ Live edits for people and agents on one document, with offline support.
 Keywords: yjs,crdt,realtime,collaboration,presence,offline,agents,durable-objects,cloudflare,mcp.
 
 - Worker: createSyncWorker({ authorize }) from "agentic-realtime/worker".
+- Exports: the README "Exports" section lists every name of each entry point: the main entry, /sdk, /client, /browser, /worker and /firestore.
 - Protocol: connect a Yjs client to /api/v1/docs/:id/ws.
 - Authorship: the room logs which principal (id and kind) sent each run of text.
   Compaction keeps the log, and each named snapshot keeps a copy. The kind marks

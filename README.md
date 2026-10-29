@@ -407,6 +407,91 @@ Limits of the adapter:
   ids or indexed values that rise in sequence can limit the write rate of a
   collection. A single-field index exemption for `value` saves index cost.
 
+## Exports
+
+Each entry point lists its exports below. Types are marked as such.
+
+### `agentic-realtime`
+
+| Name | What it is |
+| --- | --- |
+| `VERSION` | The package version. |
+| `PRINCIPAL_KINDS`, `PrincipalKind` | The principal kinds: `human`, `agent_of_human`, `agent_of_agent`, `agent`, `user_token`. |
+| `ROLES`, `Role` | The roles, from most to least rights: `owner`, `editor`, `commenter`, `viewer`. |
+| `Principal`, `Grant`, `Authorize`, `Contributor`, `DocMeta`, `SnapshotInfo`, `Realtime` | Types. `Grant` is what `authorize` returns. `Realtime` is the port that a server implements. |
+| `DOC_ID_PATTERN`, `SNAPSHOT_NAME_PATTERN`, `MAX_SNAPSHOTS` | The rules for a document id, a snapshot name, and the 50-snapshot limit. |
+| `canWrite(role)` | True for `owner` and `editor`. |
+| `isMachineKind(kind)` | True for every kind except `human`. |
+| `assertGrant(value)` | Checks a value from `authorize` and returns it as a `Grant`. Throws when it is malformed. |
+| `MESSAGE_SYNC`, `MESSAGE_AWARENESS`, `MESSAGE_AUTH`, `MESSAGE_QUERY_AWARENESS` | The message types 0 to 3 of the wire protocol. |
+| `syncStep1Message`, `updateMessage`, `awarenessMessage`, `permissionDeniedMessage` | Build one wire message as bytes. |
+| `readMessage`, `Incoming` | Read one client message against a `Y.Doc`. It returns the reply, a denial, an awareness update, or a query. It throws on a malformed message. |
+| `AwarenessRelay`, `AwarenessEntry` | Keeps the presence state of a document and relays changes. It enforces the presence limits. |
+| `encodeAwarenessUpdate`, `decodeAwarenessUpdate` | Convert presence entries to and from the wire format. |
+| `AWAY_STATES`, `AwayState`, `isAwayState`, `readAwayState` | The states `active`, `idle` and `hidden`. `readAwayState` returns `unknown` for any other value. |
+| `AwayTracker`, `AwayOptions` | Tracks activity and sets `idle` after `idleAfterSeconds`. |
+| `LIGHT_BACKGROUND`, `DARK_BACKGROUND`, `TEXT_CONTRAST`, `GRAPHIC_CONTRAST` | The two page colors, `#ffffff` and `#121212`, and the contrast minimums: 4.5 for text and 3 for graphics. |
+| `contrastRatio(a, b)`, `isHexColor(value)`, `peerColor(key, mode?)`, `safePeerColor(color, key)`, `ColorMode` | Color helpers. `mode` is `light`, `dark` or `both`. `safePeerColor` keeps a `#rrggbb` color that passes on both pages. Otherwise it uses `peerColor`. |
+| `MAX_NAME_LENGTH`, `FALLBACK_NAME`, `isSafePeerName(name)`, `assertSafePeerName(name)`, `displayPeerName(name)` | The rules for a presence name. `displayPeerName` returns `Unknown` for an unsafe name. `assertSafePeerName` throws for one. |
+| `restoreState(doc, state, origin?)` | Restores a state into a live document as a new edit. |
+| `AttributionLog`, `AttributionRange`, `Attribution`, `BlameSpan`, `blameText`, `DEFAULT_MAX_RANGES` | The authorship log, its types, and the text that `blame` returns. `DEFAULT_MAX_RANGES` is 4000. |
+| `createMemoryStorage()`, `exportStorage(storage)`, `RoomStorage` | An in-memory `RoomStorage` for tests. `exportStorage` streams the storage as JSON lines. `RoomStorage` is the key/value port. |
+
+### `agentic-realtime/sdk`
+
+Host and agent calls over HTTP. See the sections above for the flows.
+
+| Name | What it is |
+| --- | --- |
+| `Target`, `AdminTarget` | Types. `Target` is `{ server, token?, name? }`. `AdminTarget` is `{ server, secret }`. |
+| `EDIT_MODES`, `EditMode` | The text edit modes: `append`, `replace`, `insert`. |
+| `withDoc(target, docId, job)` | Joins a document, runs `job` with the connected client, and always leaves. The other calls use it. |
+| `getDoc(target, docId)` | Reads the roots of a document as plain JSON. |
+| `applyText(target, docId, edit)` | Writes text into a text root. `edit` has `root`, `text`, and optional `mode` and `at`. It refuses a root that is not text. |
+| `createSnapshot`, `listSnapshots`, `restoreSnapshot` | Save a named snapshot, list them, and restore one. |
+| `getAttribution(target, docId, snapshot?)` | Returns the authorship log, now or as of a snapshot. |
+| `blame(target, docId, root, snapshot?)` | Returns the runs of a text root with their author. |
+| `listPeers(target, docId, waitMs?)` | Joins the document, waits for the others to announce, and returns the peers. |
+| `exportDocumentStream`, `exportDocument`, `exportDocumentStreamAsHost`, `exportDocumentAsHost`, `ExportRecord` | Export the stored history. `ExportRecord` is one JSON line. The `Stream` forms yield one record at a time. |
+| `deleteDocument`, `deleteDocumentAsHost` | Delete all data of a document. This cannot be undone. |
+| `revokePrincipal(target, docId, principalId)`, `setPrincipalRole(target, docId, principalId, role)` | Host calls that close, or cap, the access of a principal. |
+
+### `agentic-realtime/client`
+
+| Name | What it is |
+| --- | --- |
+| `SyncClient` | The headless client. `SyncClient.connect(options)` resolves when the document matches the server. `SyncClient.open(options)` returns at once and keeps trying while offline. |
+| `ConnectOptions`, `Presence`, `Peer`, `Status` | Types. `Status` is `connecting`, `connected` or `disconnected`. |
+
+### `agentic-realtime/browser`
+
+| Name | What it is |
+| --- | --- |
+| `openDocument(options)` | Opens a document with an IndexedDB copy, connects, and reconnects. |
+| `peerLabel(peer)` | A label for a peer. It names an agent as machine-made. |
+| `watchPageAway(client, page?)` | Feeds page visibility and input into the away tracker. It returns a function that stops the watch. |
+| `OpenedDocument`, `PageLike` | Types. `OpenedDocument` holds the client, the persistence, and `stopWatching`. |
+
+### `agentic-realtime/worker`
+
+| Name | What it is |
+| --- | --- |
+| `createSyncWorker(options)` | Makes the Worker. Pass `authorize`. The default export refuses every document. |
+| `SyncEnv`, `SyncWorkerOptions` | Types for the Worker bindings and options. |
+| `SyncRoom`, `createSyncRoom({ reauthorize })` | The Durable Object class. `createSyncRoom` adds the re-authorization timer. |
+| `createDurableObjectRealtime(namespace, jurisdiction?)` | The `Realtime` port on Durable Objects. |
+| `Reauthorize`, `Jurisdiction` | Types. `Jurisdiction` is `eu` or `fedramp`. |
+| `ROLES`, `assertGrant`, `Authorize`, `Grant`, `Principal`, `Role` | The same names as the main entry, so a Worker can import them from one place. |
+
+### `agentic-realtime/firestore`
+
+| Name | What it is |
+| --- | --- |
+| `createFirestoreStorage(options)` | A `RoomStorage` on Firestore over REST. See Run on Firebase. |
+| `FirestoreStorageOptions`, `FirestoreError` | The options type, and the error that the adapter throws. |
+| `MAX_VALUE_BYTES` | The limit of one stored value, 1,000,000 bytes. |
+| `prefixEnd(prefix)` | The first string after every string with that prefix, or `null` when there is none. |
+
 ## Limits
 
 - One snapshot or update must stay under 2 MB (Durable Object storage limit).
