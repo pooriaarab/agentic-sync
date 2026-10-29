@@ -49,6 +49,34 @@ npm install agentic-realtime
 - Data residency. Set `SYNC_JURISDICTION=eu` to pin documents to the EU.
 - No outbound calls. The server loads no CDN assets and sends no telemetry.
 
+## Live demo
+
+A demo Worker runs on workers.dev at
+<https://agentic-sync-demo.hello-fd1.workers.dev>.
+`GET /health` answers `200`. Every document and admin route needs a bearer token, so the
+demo shows the sign-in rule and holds no public document. It runs
+[`examples/host`](examples/host/README.md) with documents pinned to the EU.
+
+To run your own copy, or to redeploy this one, you need a Cloudflare account
+and a token that may edit Workers. Run in the repository root:
+
+```sh
+export CLOUDFLARE_API_TOKEN=...   # keep it out of git and out of CI
+npm ci
+npm run deploy:demo
+```
+
+Then set the two secrets. `HOST_TOKENS` is described in the example host.
+Until you set both, every route except `/health` answers `500`.
+
+```sh
+npx wrangler secret put HOST_TOKENS --config examples/host/wrangler.demo.jsonc
+npx wrangler secret put SYNC_ADMIN_SECRET --config examples/host/wrangler.demo.jsonc
+```
+
+The deploy is a manual step. No CI job holds a secret. The config turns
+wrangler telemetry off.
+
 ## Use the Worker
 
 You own sign-in. Pass an `authorize` hook. It returns a grant, or `null` to
