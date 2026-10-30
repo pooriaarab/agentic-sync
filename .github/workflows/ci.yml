@@ -30,6 +30,46 @@ jobs:
           path: e2e-artifacts/
           if-no-files-found: ignore
 
+  minimum-identity:
+    runs-on: ubuntu-latest
+    env:
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npm install --no-save agentic-identity@0.9.0
+      - run: npm ls agentic-identity@0.9.0
+      - run: npm run ci:local
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-minimum-identity
+          path: e2e-artifacts/
+          if-no-files-found: ignore
+
+  latest-identity:
+    runs-on: ubuntu-latest
+    env:
+      WRANGLER_SEND_METRICS: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npm update --no-save agentic-identity
+      - run: npm ls agentic-identity
+      - run: npm run ci:local
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-latest-identity
+          path: e2e-artifacts/
+          if-no-files-found: ignore
+
   firestore-emulator:
     runs-on: ubuntu-latest
     env:

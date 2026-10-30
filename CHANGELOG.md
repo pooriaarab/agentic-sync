@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.1
+
+- Accept `agentic-identity` versions `>=0.9.0 <1.0.0`. Tested with 0.9.0
+  and 0.12.0.
+
 ## 0.6.0
 
 Upgrading from 0.5.0 exposes the destructive MCP `doc_delete` tool by default.
