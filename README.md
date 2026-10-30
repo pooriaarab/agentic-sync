@@ -249,8 +249,9 @@ rich-text, map, or array root and exits with 1, so it never deletes a document.
 
 ## Use the MCP server
 
-`agentic-realtime mcp` serves these tools over stdio: `doc_get`, `doc_export`, `doc_delete`, `doc_apply`,
-`doc_snapshot`, `doc_snapshots`, `doc_restore`, `doc_blame`, and `doc_presence`. Set
+`agentic-realtime mcp` serves these tools over stdio: `doc_get`, `doc_export`,
+`doc_delete`, `doc_apply`, `doc_snapshot`, `doc_snapshots`, `doc_restore`,
+`doc_blame`, and `doc_presence`. Set
 `AGENTIC_SYNC_URL`, `AGENTIC_SYNC_TOKEN`, and optionally `AGENTIC_SYNC_NAME` in
 the server environment. A tool call never carries a credential. `doc_apply`
 returns an error for a root that is not text. The same operations are in `agentic-realtime/sdk`.

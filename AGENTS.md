@@ -15,7 +15,8 @@ connect and with what role.
   `exportDocument`, `deleteDocument`, `revokePrincipal`, `setPrincipalRole`).
 - `agentic-realtime/browser`: `openDocument` (IndexedDB, reconnect) and `peerLabel`.
 - `agentic-realtime`: protocol helpers, the `Realtime` interface, and the types.
-- `agentic-realtime` CLI and `agentic-realtime mcp`: `doc get|apply|snapshot|restore|presence|blame|export|delete`.
+- `agentic-realtime` CLI and `agentic-realtime mcp`: `doc get`, `apply`,
+  `snapshot`, `restore`, `presence`, `blame`, `export`, and `delete`.
 - `examples/host`: a runnable host with token sign-in. `npm run example`.
 - `agentic-realtime/sdk`: the same operations as functions, and the host calls
   `revokePrincipal`, `setPrincipalRole`, `exportDocumentAsHost`, `deleteDocumentAsHost`, and

@@ -43,7 +43,8 @@ Only use this mode in a trusted host operator session. Credentials stay in the
 server environment. The Worker checks authority. Never give an agent the host
 secret.
 SDK createDocumentClient({ server, token }) and
-createAdminClient({ server, secret }) provide typed methods for the same routes. null lifts a role cap or revoke.
+createAdminClient({ server, secret }) provide typed methods for the same
+routes. null lifts a role cap or revoke.
 
 ## Rules
 
