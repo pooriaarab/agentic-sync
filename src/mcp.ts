@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import * as sdk from "./sdk.js";
+import { ROLES, isPrincipalId } from "./core/types.js";
 import { VERSION } from "./version.js";
 
 const doc = z.string().describe("The document id.");
@@ -20,7 +21,7 @@ export function createMcpServer(env: Record<string, string | undefined> = proces
     if (!env.AGENTIC_SYNC_URL) throw new Error("set AGENTIC_SYNC_URL");
     return { server: env.AGENTIC_SYNC_URL, token: env.AGENTIC_SYNC_TOKEN, name: env.AGENTIC_SYNC_NAME ?? "agentic-realtime mcp" };
   };
-  // Tools use the caller token. Host secrets are never read here.
+  // Owner tools use the caller token. The Worker decides the effective role.
   const guard = async (job: (t: sdk.Target) => Promise<unknown>) => {
     try {
       return result(await job(target()));
@@ -89,6 +90,41 @@ export function createMcpServer(env: Record<string, string | undefined> = proces
     { description: "List the other people and agents on the document.", inputSchema: { doc }, annotations: read },
     (a) => guard((t) => sdk.listPeers(t, a.doc)),
   );
+  server.registerTool(
+    "doc_delete",
+    { description: "Permanently erase a document. Owners only. confirm must match doc.", inputSchema: { doc, confirm: z.string() }, annotations: { destructiveHint: true } },
+    (a) => guard((t) => {
+      if (a.confirm !== a.doc) throw new Error("CONFIRMATION_REQUIRED");
+      return sdk.deleteDocument(t, a.doc);
+    }),
+  );
+  // Host tools require explicit operator opt-in. Credentials stay in this process.
+  if (env.AGENTIC_SYNC_ENABLE_ADMIN === "1") {
+    const host = async (job: (client: ReturnType<typeof sdk.createAdminClient>) => Promise<unknown>) => {
+      try {
+        if (!env.AGENTIC_SYNC_ADMIN_SECRET) throw new Error("set AGENTIC_SYNC_ADMIN_SECRET");
+        return result(await job(sdk.createAdminClient({ server: target().server, secret: env.AGENTIC_SYNC_ADMIN_SECRET })));
+      } catch (error) {
+        return result({ error: error instanceof Error ? error.message : String(error) }, true);
+      }
+    };
+    const principal = z.string().refine(isPrincipalId, "Invalid principal id");
+    server.registerTool("admin_export", {
+      description: "Export stored history with host authority.", inputSchema: { doc }, annotations: read,
+    }, (a) => host((c) => c.exportDocument(a.doc)));
+    server.registerTool("admin_delete", {
+      description: "Permanently erase with host authority. confirm must match doc.", inputSchema: { doc, confirm: z.string() }, annotations: { destructiveHint: true },
+    }, (a) => host((c) => {
+      if (a.confirm !== a.doc) throw new Error("CONFIRMATION_REQUIRED");
+      return c.deleteDocument(a.doc);
+    }));
+    server.registerTool("admin_revoke", {
+      description: "Revoke a principal with host authority.", inputSchema: { doc, principalId: principal }, annotations: { destructiveHint: true },
+    }, (a) => host((c) => c.revokePrincipal(a.doc, a.principalId)));
+    server.registerTool("admin_role", {
+      description: "Cap a principal role. null lifts the cap or revoke.", inputSchema: { doc, principalId: principal, role: z.enum(ROLES).nullable() }, annotations: { destructiveHint: true },
+    }, (a) => host((c) => c.setPrincipalRole(a.doc, a.principalId, a.role)));
+  }
   return server;
 }
 

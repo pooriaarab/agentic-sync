@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0
+
+Upgrading from 0.5.0 needs no code change.
+
+- Add typed SDK owner and host clients.
+- Add CLI owner delete and host export, delete, revoke, and role commands.
+- Add MCP owner delete and opt-in host tools with schemas and Worker checks.
+- Host credentials stay in the operator environment. Delete needs confirmation.
+
+
 ## 0.5.0
 
 Upgrading from 0.4.4 needs no code change.

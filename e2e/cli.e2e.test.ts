@@ -211,7 +211,7 @@ describe("the agentic-realtime MCP server over stdio", () => {
     };
     const agent = await connect("agent");
     const tools = (await agent.listTools()).tools.map((t) => t.name).sort();
-    expect(tools).toEqual(["doc_apply", "doc_blame", "doc_export", "doc_get", "doc_presence", "doc_restore", "doc_snapshot", "doc_snapshots"]);
+    expect(tools).toEqual(["doc_apply", "doc_blame", "doc_delete", "doc_export", "doc_get", "doc_presence", "doc_restore", "doc_snapshot", "doc_snapshots"]);
 
     await call(agent, "doc_apply", { doc: "m1", root: "body", text: "one" });
     await call(agent, "doc_snapshot", { doc: "m1", name: "first" });
