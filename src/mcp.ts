@@ -122,7 +122,7 @@ export function createMcpServer(env: Record<string, string | undefined> = proces
       description: "Revoke a principal with host authority.", inputSchema: { doc, principalId: principal }, annotations: { destructiveHint: true },
     }, (a) => host((c) => c.revokePrincipal(a.doc, a.principalId)));
     server.registerTool("admin_role", {
-      description: "Cap a principal role. null lifts the cap or revoke.", inputSchema: { doc, principalId: principal, role: z.enum(ROLES).nullable() }, annotations: { destructiveHint: true },
+      description: "Cap a principal role. null lifts the cap or revoke.", inputSchema: { doc, principalId: principal, role: z.enum(ROLES).nullable().describe("Cap to this role. null or owner lifts the cap and any revoke.") }, annotations: { destructiveHint: true },
     }, (a) => host((c) => c.setPrincipalRole(a.doc, a.principalId, a.role)));
   }
   return server;

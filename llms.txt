@@ -24,7 +24,8 @@ Keywords: yjs,crdt,realtime,collaboration,presence,offline,agents,durable-object
 
 Host operators set AGENTIC_SYNC_ADMIN_SECRET for CLI `admin export|delete|revoke|role`.
 Use --doc, --confirm for delete, --principal for revoke/role, and --role with
-owner|editor|commenter|viewer|null. All commands print JSON and accept --help.
+owner|editor|commenter|viewer|null. Successful results print as JSON on stdout. Help and errors are plain text.
+Each subcommand accepts --help.
 MCP host tools require AGENTIC_SYNC_ENABLE_ADMIN=1: admin_export, admin_delete,
 admin_revoke, admin_role. Schemas use doc, confirm, principalId, role.
 Only use this mode in a trusted host operator session. Credentials stay in the

@@ -54,7 +54,7 @@ export function parseArgs(argv: string[]): CliRequest {
       throw new UsageError(`--${flag} needs a whole number, 0 or more`);
     }
   }
-  if (flags.doc === undefined) throw new UsageError("doc commands need --doc <id>");
+  if (flags.doc === undefined) throw new UsageError(`${first} commands need --doc <id>`);
   const need = { apply: ["root"], restore: ["name"], blame: ["root"] }[sub as "apply" | "restore" | "blame"] ?? [];
   for (const flag of need) if (!flags[flag]) throw new UsageError(`doc ${sub} needs --${flag}`);
   if (sub === "apply" && flags.text === undefined && flags.file === undefined) {

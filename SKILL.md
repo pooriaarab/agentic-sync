@@ -29,18 +29,20 @@ Owners can run `agentic-realtime doc export --doc <id>` or call `doc_export`
 to read stored history as a JSON array. Owners delete with `doc delete --doc <id> --confirm <id>` or MCP `doc_delete`
 with matching `doc` and `confirm`. Never give an agent the host secret.
 
-## Rules
-
-- The host owns auth. Pass an `authorize` hook.
-- Read-only roles cannot write. The server drops their updates.
-- Label agent edits by principal kind. Never hide that an agent wrote them.
-
 Host operators set AGENTIC_SYNC_ADMIN_SECRET for CLI `admin export|delete|revoke|role`.
 Use --doc, --confirm for delete, --principal for revoke/role, and --role with
-owner|editor|commenter|viewer|null. All commands print JSON and accept --help.
+owner|editor|commenter|viewer|null. Successful results print as JSON on stdout. Help and errors are plain text.
+Each subcommand accepts --help.
 MCP host tools require AGENTIC_SYNC_ENABLE_ADMIN=1: admin_export, admin_delete,
 admin_revoke, admin_role. Schemas use doc, confirm, principalId, role.
 Only use this mode in a trusted host operator session. Credentials stay in the
 server environment. The Worker checks authority. Never give an agent the host secret.
 SDK createDocumentClient({ server, token }) and createAdminClient({ server, secret })
 provide typed methods for the same routes. null lifts a role cap or revoke.
+
+
+## Rules
+
+- The host owns auth. Pass an `authorize` hook.
+- Read-only roles cannot write. The server drops their updates.
+- Label agent edits by principal kind. Never hide that an agent wrote them.
