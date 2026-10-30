@@ -2,15 +2,16 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import * as sdk from "./sdk.js";
+import { ROLES, isPrincipalId, type Role } from "./core/types.js";
 import { VERSION } from "./version.js";
 
 export class UsageError extends Error {}
 
-const FLAGS = ["server", "doc", "root", "text", "file", "mode", "at", "name", "wait", "snapshot"];
-const SUBCOMMANDS = ["get", "apply", "snapshot", "restore", "presence", "blame", "export"];
+const FLAGS = ["server", "doc", "root", "text", "file", "mode", "at", "name", "wait", "snapshot", "principal", "role", "confirm"];
+const SUBCOMMANDS = ["get", "apply", "snapshot", "restore", "presence", "blame", "export", "delete"];
 
 export interface CliRequest {
-  command: "help" | "version" | "mcp" | "doc";
+  command: "help" | "version" | "mcp" | "doc" | "admin";
   sub?: string;
   flags: Record<string, string>;
 }
@@ -26,13 +27,16 @@ export function parseArgs(argv: string[]): CliRequest {
     if (rest.length > 0) throw new UsageError(`mcp takes no argument, got "${rest[0]}"`);
     return { command: "mcp", flags: {} };
   }
-  if (first !== "doc") throw new UsageError(`unknown command "${first}"`);
+  if (first !== "doc" && first !== "admin") throw new UsageError(`unknown command "${first}"`);
+  if (rest[0] === "--help" || rest[0] === "-h") return { command: "help", flags: {} };
   const sub = rest.shift();
-  if (sub === undefined || !SUBCOMMANDS.includes(sub)) {
-    throw new UsageError(`doc needs one of: ${SUBCOMMANDS.join(", ")}`);
+  const commands = first === "admin" ? ["export", "delete", "revoke", "role"] : SUBCOMMANDS;
+  if (sub === undefined || !commands.includes(sub)) {
+    throw new UsageError(`${first} needs one of: ${commands.join(", ")}`);
   }
   const flags: Record<string, string> = {};
   while (rest.length > 0) {
+    if (rest[0] === "--help" || rest[0] === "-h") return { command: "help", sub, flags: { group: first } };
     const flag = rest.shift()!.replace(/^--/, "");
     const value = rest.shift();
     if (!FLAGS.includes(flag)) throw new UsageError(`bad flag "--${flag}"`);
@@ -42,6 +46,18 @@ export function parseArgs(argv: string[]): CliRequest {
     }
     flags[flag] = value;
   }
+  const allowed: Record<string, string[]> = first === "admin" ? {
+    export: [], delete: ["confirm"], revoke: ["principal"], role: ["principal", "role"],
+  } : {
+    get: ["name"], apply: ["root", "text", "file", "mode", "at", "name"],
+    snapshot: ["name"], restore: ["name"], presence: ["wait", "name"],
+    blame: ["root", "snapshot", "name"], export: [], delete: ["confirm"],
+  };
+  for (const flag of Object.keys(flags)) {
+    if (flag !== "doc" && flag !== "server" && !allowed[sub].includes(flag)) {
+      throw new UsageError(`--${flag} is not valid for ${first} ${sub}`);
+    }
+  }
   if (flags.mode !== undefined && !sdk.EDIT_MODES.includes(flags.mode as sdk.EditMode)) {
     throw new UsageError(`--mode is one of ${sdk.EDIT_MODES.join(", ")}`);
   }
@@ -50,21 +66,31 @@ export function parseArgs(argv: string[]): CliRequest {
       throw new UsageError(`--${flag} needs a whole number, 0 or more`);
     }
   }
-  if (flags.doc === undefined) throw new UsageError("doc commands need --doc <id>");
+  if (flags.doc === undefined) throw new UsageError(`${first} commands need --doc <id>`);
   const need = { apply: ["root"], restore: ["name"], blame: ["root"] }[sub as "apply" | "restore" | "blame"] ?? [];
   for (const flag of need) if (!flags[flag]) throw new UsageError(`doc ${sub} needs --${flag}`);
   if (sub === "apply" && flags.text === undefined && flags.file === undefined) {
     throw new UsageError("doc apply needs --text or --file");
   }
-  return { command: "doc", sub, flags };
+  if (sub === "delete" && flags.confirm !== flags.doc) throw new UsageError("delete needs --confirm matching --doc");
+  if ((sub === "revoke" || sub === "role") && !isPrincipalId(flags.principal)) throw new UsageError("--principal needs a valid principal id");
+  if (sub === "role" && flags.role !== "null" && !ROLES.includes(flags.role as Role)) throw new UsageError("--role needs owner|editor|commenter|viewer|null");
+  return { command: first, sub, flags };
 }
 
 const HELP = `agentic-realtime ${VERSION}
-Usage: agentic-realtime doc <get|apply|snapshot|restore|presence|blame|export> --doc <id> [flags]
+Usage: agentic-realtime doc <get|apply|snapshot|restore|presence|blame|export|delete> --doc <id> [flags]
+       agentic-realtime admin <export|delete|revoke|role> --doc <id> [flags]
        agentic-realtime mcp [-h | --help | -V | -v | --version]
 
 Set AGENTIC_SYNC_URL and AGENTIC_SYNC_TOKEN. The token stays off the command line.
 
+  delete --confirm <id>        Permanently erase the document. Owners only.
+  admin export                 Export with AGENTIC_SYNC_ADMIN_SECRET.
+  admin delete --confirm <id>  Erase with the host secret.
+  admin revoke --principal <id>  Revoke a principal.
+  admin role --principal <id> --role owner|editor|commenter|viewer|null
+                               Cap a role; null lifts the cap or revoke.
   get                          Print every root as JSON.
   export                       Print stored history as a JSON array. Owners only.
   apply --root <r> --text <t> | --file <path|->   [--mode append|replace|insert] [--at <n>]
@@ -86,7 +112,16 @@ export async function runCli(
 ): Promise<number> {
   try {
     const { command, sub, flags } = parseArgs(argv);
-    if (command === "help") return console.log(HELP), 0;
+    if (command === "help") {
+      const suffix: Record<string, string> = {
+        export: "", delete: " --confirm <id>", revoke: " --principal <id>",
+        role: " --principal <id> --role owner|editor|commenter|viewer|null",
+        get: " [--name <n>]", apply: " --root <r> (--text <t> | --file <path|->) [--mode append|replace|insert] [--at <n>] [--name <n>]",
+        snapshot: " [--name <n>]", restore: " --name <n>", presence: " [--wait <ms>] [--name <n>]", blame: " --root <r> [--snapshot <n>] [--name <n>]",
+      };
+      console.log(sub === undefined ? HELP : `Usage: agentic-realtime ${flags.group} ${sub} --doc <id>${suffix[sub]} [--server <url>]\nPrints JSON. Set AGENTIC_SYNC_URL and ${flags.group === "admin" ? "AGENTIC_SYNC_ADMIN_SECRET" : "AGENTIC_SYNC_TOKEN"}.`);
+      return 0;
+    }
     if (command === "version") return console.log(VERSION), 0;
     if (command === "mcp") {
       await (await import("./mcp.js")).startMcp(env);
@@ -97,7 +132,20 @@ export async function runCli(
     const target: sdk.Target = { server, token: env.AGENTIC_SYNC_TOKEN, name: peerName(sub, flags.name) };
     const doc = flags.doc;
     let result: unknown;
-    switch (sub) {
+    if (command === "admin") {
+      const secret = env.AGENTIC_SYNC_ADMIN_SECRET;
+      if (!secret) throw new UsageError("set AGENTIC_SYNC_ADMIN_SECRET for admin commands");
+      const admin = sdk.createAdminClient({ server, secret });
+      switch (sub) {
+        case "export": result = await admin.exportDocument(doc); break;
+        case "delete": result = await admin.deleteDocument(doc); break;
+        case "revoke": result = await admin.revokePrincipal(doc, flags.principal); break;
+        case "role": result = await admin.setPrincipalRole(doc, flags.principal, flags.role === "null" ? null : flags.role as Role); break;
+      }
+    } else switch (sub) {
+      case "delete":
+        result = await sdk.deleteDocument(target, doc);
+        break;
       case "export":
         result = await sdk.exportDocument(target, doc);
         break;

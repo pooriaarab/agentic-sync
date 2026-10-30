@@ -190,6 +190,19 @@ describe("the CLI checks its flags", () => {
     expect(json((await cli(["doc", "get", "--doc", "f1"])).out)).toEqual({});
   });
 
+  test("rejects flags that the chosen command cannot use", async () => {
+    for (const [group, command, flag, value] of [
+      ["admin", "export", "role", "viewer"],
+      ["doc", "export", "confirm", "f2"],
+      ["doc", "get", "principal", "person-1"],
+    ]) {
+      const run = await cli([group, command, "--doc", "f2", `--${flag}`, value]);
+      expect(run.code).toBe(2);
+      expect(run.err).toContain(`--${flag} is not valid`);
+      expect(run.out).toBe("");
+    }
+  });
+
   test("the CLI has no --kind flag, because the server sets the kind", async () => {
     const run = await cli(["doc", "get", "--doc", "f2", "--kind", "human"]);
     expect(run.code).toBe(2);
@@ -211,7 +224,7 @@ describe("the agentic-realtime MCP server over stdio", () => {
     };
     const agent = await connect("agent");
     const tools = (await agent.listTools()).tools.map((t) => t.name).sort();
-    expect(tools).toEqual(["doc_apply", "doc_blame", "doc_export", "doc_get", "doc_presence", "doc_restore", "doc_snapshot", "doc_snapshots"]);
+    expect(tools).toEqual(["doc_apply", "doc_blame", "doc_delete", "doc_export", "doc_get", "doc_presence", "doc_restore", "doc_snapshot", "doc_snapshots"]);
 
     await call(agent, "doc_apply", { doc: "m1", root: "body", text: "one" });
     await call(agent, "doc_snapshot", { doc: "m1", name: "first" });

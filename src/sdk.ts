@@ -257,4 +257,19 @@ export const revokePrincipal = (target: AdminTarget, docId: string, principalId:
 // the cap, and with it a revoke. The role "owner" does the same, because a cap
 // of owner narrows nothing.
 export const setPrincipalRole = (target: AdminTarget, docId: string, principalId: string, role: Role | null) =>
-  admin(target, docId, "role", { principalId, role });
+  admin(target, docId, "role", { principalId, role }) as Promise<{ ok: true }>;
+
+// Bound clients reuse the route functions and their server-side permission checks.
+export const createDocumentClient = (target: Target) => ({
+  exportDocument: (docId: string) => exportDocument(target, docId),
+  exportDocumentStream: (docId: string) => exportDocumentStream(target, docId),
+  deleteDocument: (docId: string) => deleteDocument(target, docId),
+});
+
+export const createAdminClient = (target: AdminTarget) => ({
+  exportDocument: (docId: string) => exportDocumentAsHost(target, docId),
+  exportDocumentStream: (docId: string) => exportDocumentStreamAsHost(target, docId),
+  deleteDocument: (docId: string) => deleteDocumentAsHost(target, docId),
+  revokePrincipal: (docId: string, principalId: string) => revokePrincipal(target, docId, principalId),
+  setPrincipalRole: (docId: string, principalId: string, role: Role | null) => setPrincipalRole(target, docId, principalId, role),
+});

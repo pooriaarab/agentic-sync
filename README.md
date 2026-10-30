@@ -7,7 +7,7 @@
 
 Live edits for people and agents on one document, with offline support.
 
-> Status: 0.5.0 preview. Most features below have an end-to-end test.
+> Status: 0.6.0 preview. Most features below have an end-to-end test.
 > Hibernation, the no-outbound-calls rule, and EU placement do not.
 
 ## Install
@@ -226,15 +226,22 @@ export AGENTIC_SYNC_TOKEN=...   # sent as a bearer token
 agentic-realtime doc apply --doc notes --root body --text "Hello"
 agentic-realtime doc get --doc notes
 agentic-realtime doc export --doc notes  # owners only; JSON array
+agentic-realtime doc delete --doc notes --confirm notes  # permanent
+# Host operator environment: set AGENTIC_SYNC_ADMIN_SECRET.
+agentic-realtime admin export --doc notes
+agentic-realtime admin role --doc notes --principal person-1 --role viewer
+agentic-realtime admin revoke --doc notes --principal person-1
+agentic-realtime admin delete --doc notes --confirm notes
 agentic-realtime doc snapshot --doc notes --name before-review
 agentic-realtime doc restore --doc notes --name before-review
 agentic-realtime doc presence --doc notes
 agentic-realtime doc blame --doc notes --root body
 ```
 
-Each command joins the document, does one job, prints JSON, and leaves. `doc
-snapshot` without `--name` lists the snapshots. A refused edit exits with 1 and
-prints the reason. `--name` sets the name you show in presence, except for `snapshot`
+Commands print JSON. Most commands join the document, do one job, and leave.
+Export, delete, and host commands use HTTP without joining. `doc snapshot`
+without `--name` lists the snapshots. A refused edit exits with 1 and prints
+the reason. `--name` sets the name you show in presence, except for `snapshot`
 and `restore`, where it is the snapshot name. The server takes
 your role, your kind, and your author label from the token. The CLI has no
 `--kind` flag. `doc apply` edits text roots and empty roots only. It refuses a
@@ -242,8 +249,9 @@ rich-text, map, or array root and exits with 1, so it never deletes a document.
 
 ## Use the MCP server
 
-`agentic-realtime mcp` serves these tools over stdio: `doc_get`, `doc_export`, `doc_apply`,
-`doc_snapshot`, `doc_snapshots`, `doc_restore`, `doc_blame`, and `doc_presence`. Set
+`agentic-realtime mcp` serves these tools over stdio: `doc_get`, `doc_export`,
+`doc_delete`, `doc_apply`, `doc_snapshot`, `doc_snapshots`, `doc_restore`,
+`doc_blame`, and `doc_presence`. Set
 `AGENTIC_SYNC_URL`, `AGENTIC_SYNC_TOKEN`, and optionally `AGENTIC_SYNC_NAME` in
 the server environment. A tool call never carries a credential. `doc_apply`
 returns an error for a root that is not text. The same operations are in `agentic-realtime/sdk`.
@@ -303,10 +311,34 @@ The host backend can call `revokePrincipal(secret, principalId)` and
 `setPrincipalRole(secret, principalId, role)`. Pass `null` to lift a cap or ban.
 The secret is passed per call and is not stored on the client.
 
-Delete, revoke, and role changes stay client/SDK-only. The CLI and MCP have no
-commands for them and do not read a host secret. This keeps destructive calls
-and host credentials out of agent tools. An agent must not delete a document,
-and it must not hold the host secret.
+Owners can run `doc delete --doc notes --confirm notes` or call MCP `doc_delete`
+with `{ "doc": "notes", "confirm": "notes" }`. A mismatch fails before the request.
+The Worker checks the effective owner role for both export and delete.
+
+Host operators set `AGENTIC_SYNC_ADMIN_SECRET` in the CLI environment. Then use:
+
+```sh
+agentic-realtime admin export --doc notes
+agentic-realtime admin role --doc notes --principal person-1 --role viewer
+agentic-realtime admin revoke --doc notes --principal person-1
+agentic-realtime admin role --doc notes --principal person-1 --role null
+agentic-realtime admin delete --doc notes --confirm notes
+```
+
+Each command prints JSON. Each subcommand accepts `--help`. Secrets have no CLI flag.
+For MCP, the operator must also set `AGENTIC_SYNC_ENABLE_ADMIN=1`. This enables
+`admin_export`, `admin_delete`, `admin_revoke`, and `admin_role`. Tool arguments use
+`doc`, `principalId`, `role` (a known role or null), and `confirm` for delete.
+The schemas check principal ids and roles. The Worker checks host authority.
+An invalid or missing host secret fails closed. Normal MCP sessions omit these tools.
+Run this mode only in a trusted host operator session. An agent must not hold the
+host secret. Tool calls never carry credentials.
+
+The SDK has typed bound clients. `createDocumentClient({ server, token })` has
+`exportDocument`, `exportDocumentStream`, and `deleteDocument`.
+`createAdminClient({ server, secret })` has the same methods plus
+`revokePrincipal(docId, principalId)` and `setPrincipalRole(docId, principalId, role)`.
+These clients call the existing route functions. They add no authorization layer.
 
 ## See who wrote what
 
@@ -459,6 +491,7 @@ Host and agent calls over HTTP. See the sections above for the flows.
 
 | Name | What it is |
 | --- | --- |
+| `createDocumentClient`, `createAdminClient` | Typed bound owner and host clients. |
 | `Target` (type), `AdminTarget` (type) | Types. `Target` is `{ server, token?, name?, headers? }`. Export and delete forward `headers`; `token` takes precedence. `AdminTarget` is `{ server, secret }`. |
 | `EDIT_MODES`, `EditMode` (type) | The text edit modes: `append`, `replace`, `insert`. |
 | `withDoc(target, docId, job)` | Joins a document, runs `job` with the connected client, and always leaves. `getDoc`, `applyText`, the snapshot calls, `blame` without a snapshot and `listPeers` use it. |
