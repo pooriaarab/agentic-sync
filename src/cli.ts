@@ -28,7 +28,7 @@ export function parseArgs(argv: string[]): CliRequest {
     return { command: "mcp", flags: {} };
   }
   if (first !== "doc" && first !== "admin") throw new UsageError(`unknown command "${first}"`);
-  if (rest.includes("--help") || rest.includes("-h")) return { command: "help", flags: {} };
+  if (rest[0] === "--help" || rest[0] === "-h") return { command: "help", flags: {} };
   const sub = rest.shift();
   const commands = first === "admin" ? ["export", "delete", "revoke", "role"] : SUBCOMMANDS;
   if (sub === undefined || !commands.includes(sub)) {
@@ -36,6 +36,7 @@ export function parseArgs(argv: string[]): CliRequest {
   }
   const flags: Record<string, string> = {};
   while (rest.length > 0) {
+    if (rest[0] === "--help" || rest[0] === "-h") return { command: "help", sub, flags: { group: first } };
     const flag = rest.shift()!.replace(/^--/, "");
     const value = rest.shift();
     if (!FLAGS.includes(flag)) throw new UsageError(`bad flag "--${flag}"`);
@@ -99,7 +100,16 @@ export async function runCli(
 ): Promise<number> {
   try {
     const { command, sub, flags } = parseArgs(argv);
-    if (command === "help") return console.log(HELP), 0;
+    if (command === "help") {
+      const suffix: Record<string, string> = {
+        export: "", delete: " --confirm <id>", revoke: " --principal <id>",
+        role: " --principal <id> --role owner|editor|commenter|viewer|null",
+        get: "", apply: " --root <r> --text <t> | --file <path|->",
+        snapshot: " [--name <n>]", restore: " --name <n>", presence: " [--wait <ms>]", blame: " --root <r> [--snapshot <n>]",
+      };
+      console.log(sub === undefined ? HELP : `Usage: agentic-realtime ${flags.group} ${sub} --doc <id>${suffix[sub]} [--server <url>]\nPrints JSON. Set AGENTIC_SYNC_URL and ${flags.group === "admin" ? "AGENTIC_SYNC_ADMIN_SECRET" : "AGENTIC_SYNC_TOKEN"}.`);
+      return 0;
+    }
     if (command === "version") return console.log(VERSION), 0;
     if (command === "mcp") {
       await (await import("./mcp.js")).startMcp(env);

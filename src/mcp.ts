@@ -92,7 +92,7 @@ export function createMcpServer(env: Record<string, string | undefined> = proces
   );
   server.registerTool(
     "doc_delete",
-    { description: "Permanently erase a document. Owners only. confirm must match doc.", inputSchema: { doc, confirm: z.string() }, annotations: { destructiveHint: true } },
+    { description: "Permanently erase a document. Owners only. confirm must match doc.", inputSchema: { doc, confirm: z.string().describe("Repeat the document id to confirm permanent deletion.") }, annotations: { destructiveHint: true } },
     (a) => guard((t) => {
       if (a.confirm !== a.doc) throw new Error("CONFIRMATION_REQUIRED");
       return sdk.deleteDocument(t, a.doc);
@@ -108,12 +108,12 @@ export function createMcpServer(env: Record<string, string | undefined> = proces
         return result({ error: error instanceof Error ? error.message : String(error) }, true);
       }
     };
-    const principal = z.string().refine(isPrincipalId, "Invalid principal id");
+    const principal = z.string().refine(isPrincipalId, "Invalid principal id").describe("The principal id whose access changes.");
     server.registerTool("admin_export", {
       description: "Export stored history with host authority.", inputSchema: { doc }, annotations: read,
     }, (a) => host((c) => c.exportDocument(a.doc)));
     server.registerTool("admin_delete", {
-      description: "Permanently erase with host authority. confirm must match doc.", inputSchema: { doc, confirm: z.string() }, annotations: { destructiveHint: true },
+      description: "Permanently erase with host authority. confirm must match doc.", inputSchema: { doc, confirm: z.string().describe("Repeat the document id to confirm permanent deletion.") }, annotations: { destructiveHint: true },
     }, (a) => host((c) => {
       if (a.confirm !== a.doc) throw new Error("CONFIRMATION_REQUIRED");
       return c.deleteDocument(a.doc);

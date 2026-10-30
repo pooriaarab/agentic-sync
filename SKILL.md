@@ -24,7 +24,7 @@ the contributors and their kinds.
 Set `AGENTIC_SYNC_URL` and `AGENTIC_SYNC_TOKEN`. Then run
 `agentic-realtime doc apply --doc <id> --root body --text "..."`, or start
 `agentic-realtime mcp` and call `doc_get`, `doc_apply`, `doc_snapshot`,
-`doc_snapshots`, `doc_restore`, `doc_blame`, `doc_export`, and `doc_presence`.
+`doc_snapshots`, `doc_restore`, `doc_blame`, `doc_export`, `doc_delete`, and `doc_presence`.
 Owners can run `agentic-realtime doc export --doc <id>` or call `doc_export`
 to read stored history as a JSON array. Owners delete with `doc delete --doc <id> --confirm <id>` or MCP `doc_delete`
 with matching `doc` and `confirm`. Never give an agent the host secret.

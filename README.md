@@ -226,14 +226,20 @@ export AGENTIC_SYNC_TOKEN=...   # sent as a bearer token
 agentic-realtime doc apply --doc notes --root body --text "Hello"
 agentic-realtime doc get --doc notes
 agentic-realtime doc export --doc notes  # owners only; JSON array
+agentic-realtime doc delete --doc notes --confirm notes  # permanent
+# Host operator environment: set AGENTIC_SYNC_ADMIN_SECRET.
+agentic-realtime admin export --doc notes
+agentic-realtime admin role --doc notes --principal person-1 --role viewer
+agentic-realtime admin revoke --doc notes --principal person-1
+agentic-realtime admin delete --doc notes --confirm notes
 agentic-realtime doc snapshot --doc notes --name before-review
 agentic-realtime doc restore --doc notes --name before-review
 agentic-realtime doc presence --doc notes
 agentic-realtime doc blame --doc notes --root body
 ```
 
-Each command joins the document, does one job, prints JSON, and leaves. `doc
-snapshot` without `--name` lists the snapshots. A refused edit exits with 1 and
+Commands print JSON. Most commands join the document, do one job, and leave.
+Export, delete, and host commands use HTTP without joining. `doc snapshot` without `--name` lists the snapshots. A refused edit exits with 1 and
 prints the reason. `--name` sets the name you show in presence, except for `snapshot`
 and `restore`, where it is the snapshot name. The server takes
 your role, your kind, and your author label from the token. The CLI has no

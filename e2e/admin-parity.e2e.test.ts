@@ -56,44 +56,79 @@ for (const kind of ["sdk", "cli", "mcp"]) test(`${kind}: owner and host operatio
   const owner = await surface(kind);
   const viewer = await surface(kind, "viewer", "wrong");
   const missing = await surface(kind, "nobody", "");
+  const editor = await surface(kind, "agent");
   try {
     expect((await owner.call(false, "export", doc))[0].type).toBe("meta");
     expect((await owner.call(true, "export", doc))[0].type).toBe("meta");
     for (const action of ["export", "delete"]) {
       await expect(viewer.call(false, action, doc)).rejects.toThrow("OWNER_ONLY");
-      await expect(missing.call(false, action, doc)).rejects.toThrow();
+      await expect(missing.call(false, action, doc)).rejects.toThrow("UNAUTHORIZED");
+      await expect(editor.call(false, action, doc)).rejects.toThrow("OWNER_ONLY");
       await expect(viewer.call(true, action, doc)).rejects.toThrow("UNAUTHORIZED");
-      await expect(missing.call(true, action, doc)).rejects.toThrow();
+      await expect(missing.call(true, action, doc)).rejects.toThrow(kind === "sdk" ? "UNAUTHORIZED" : "AGENTIC_SYNC_ADMIN_SECRET");
     }
     for (const action of ["revoke", "role"]) {
       await expect(viewer.call(true, action, doc, { principalId: "agent-7", role: "viewer" })).rejects.toThrow("UNAUTHORIZED");
-      await expect(owner.call(true, action, doc, { principalId: "", role: "viewer" })).rejects.toThrow();
+      await expect(owner.call(true, action, doc, { principalId: "", role: "viewer" })).rejects.toThrow(kind === "sdk" ? "INVALID_PRINCIPAL_ID" : kind === "cli" ? "valid principal id" : "Invalid principal id");
     }
-    await expect(owner.call(true, "role", doc, { principalId: "agent-7", role: "invalid" })).rejects.toThrow();
+    await expect(owner.call(true, "role", doc, { principalId: "agent-7", role: "invalid" })).rejects.toThrow(kind === "sdk" ? "INVALID_ROLE" : kind === "cli" ? "--role" : "Invalid option");
     expect(await owner.call(true, "role", doc, { principalId: "agent-7", role: "viewer" })).toEqual({ ok: true });
     await expect(applyText(target, doc, { root: "body", text: "denied" })).rejects.toThrow();
+    await owner.call(true, "role", doc, { principalId: "agent-7", role: null });
+    await applyText(target, doc, { root: "body", text: " uncapped" });
     expect(await owner.call(true, "revoke", doc, { principalId: "agent-7" })).toHaveProperty("closed");
     await expect(applyText(target, doc, { root: "body", text: "denied" })).rejects.toThrow();
     await owner.call(true, "role", doc, { principalId: "agent-7", role: null });
     await applyText(target, doc, { root: "body", text: " restored" });
-    if (kind !== "sdk") await expect(owner.call(false, "delete", doc, { confirm: "other" })).rejects.toThrow();
+    await owner.call(true, "role", doc, { principalId: "person-2", role: "editor" });
+    for (const action of ["export", "delete"]) await expect(owner.call(false, action, doc)).rejects.toThrow("OWNER_ONLY");
+    await owner.call(true, "role", doc, { principalId: "person-2", role: null });
+    if (kind !== "sdk") for (const admin of [false, true]) {
+      await expect(owner.call(admin, "delete", doc, { confirm: "other" })).rejects.toThrow(kind === "cli" ? "--confirm" : "CONFIRMATION_REQUIRED");
+    }
     expect(await owner.call(false, "delete", doc)).toMatchObject({ deleted: true });
     await applyText(target, doc, { root: "body", text: "fresh" });
     expect(await owner.call(true, "delete", doc)).toMatchObject({ deleted: true });
     const records = await owner.call(false, "export", doc);
     expect(records.filter((r: any) => r.type === "update")).toEqual([]);
-  } finally { await owner.close(); await viewer.close(); await missing.close(); }
+  } finally { await owner.close(); await viewer.close(); await missing.close(); await editor.close(); }
 }, 60_000);
 
 test("CLI subcommand help and MCP host opt-in", async () => {
   for (const args of [["doc", "delete"], ...["export", "delete", "revoke", "role"].map((a) => ["admin", a])]) {
     const output = await new Promise<string>((resolve, reject) => execFile("node", ["dist/cli.js", ...args, "--help"],
       (error, out) => error ? reject(error) : resolve(out)));
-    expect(output).toContain("--confirm");
+    expect(output).toContain(`Usage: agentic-realtime ${args.join(" ")} --doc <id>`);
+    expect(output).toContain(args[1] === "delete" ? "--confirm <id>" : args[1] === "role" ? "--role owner|editor|commenter|viewer|null" : args[1] === "revoke" ? "--principal <id>" : "Prints JSON");
   }
   const client = new Client({ name: "parity", version: "1" });
   await client.connect(new StdioClientTransport({ command: "node", args: ["dist/cli.js", "mcp"],
     env: { ...environment("editor2"), AGENTIC_SYNC_ENABLE_ADMIN: "0" } }));
   try { expect((await client.listTools()).tools.some((t) => t.name.startsWith("admin_"))).toBe(false); }
   finally { await client.close(); }
+});
+
+
+test("CLI help-like text values are edits", async () => {
+  for (const text of ["-h", "--help"]) {
+    await new Promise<void>((resolve, reject) => execFile("node", ["dist/cli.js", "doc", "apply", "--doc", "HelpText", "--root", "body", "--text", text],
+      { env: environment("agent") }, (error) => error ? reject(error) : resolve()));
+  }
+  const { getDoc } = await import("../src/sdk.js");
+  expect(await getDoc({ server: server.http, token: "agent" }, "HelpText")).toEqual({ body: "-h--help" });
+});
+
+
+test("Worker rejects invalid admin input even without surface validation", async () => {
+  for (const [action, body, code] of [
+    ["revoke", { principalId: "" }, "INVALID_PRINCIPAL_ID"],
+    ["role", { principalId: "" , role: "viewer" }, "INVALID_PRINCIPAL_ID"],
+    ["role", { principalId: "agent-7", role: "invalid" }, "INVALID_ROLE"],
+  ] as const) {
+    const response = await fetch(`${server.http}/api/v1/admin/docs/Raw/${action}`, {
+      method: "POST", headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: { code } });
+  }
 });
