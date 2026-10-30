@@ -116,8 +116,8 @@ export async function runCli(
       const suffix: Record<string, string> = {
         export: "", delete: " --confirm <id>", revoke: " --principal <id>",
         role: " --principal <id> --role owner|editor|commenter|viewer|null",
-        get: "", apply: " --root <r> --text <t> | --file <path|->",
-        snapshot: " [--name <n>]", restore: " --name <n>", presence: " [--wait <ms>]", blame: " --root <r> [--snapshot <n>]",
+        get: " [--name <n>]", apply: " --root <r> (--text <t> | --file <path|->) [--mode append|replace|insert] [--at <n>] [--name <n>]",
+        snapshot: " [--name <n>]", restore: " --name <n>", presence: " [--wait <ms>] [--name <n>]", blame: " --root <r> [--snapshot <n>] [--name <n>]",
       };
       console.log(sub === undefined ? HELP : `Usage: agentic-realtime ${flags.group} ${sub} --doc <id>${suffix[sub]} [--server <url>]\nPrints JSON. Set AGENTIC_SYNC_URL and ${flags.group === "admin" ? "AGENTIC_SYNC_ADMIN_SECRET" : "AGENTIC_SYNC_TOKEN"}.`);
       return 0;

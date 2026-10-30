@@ -101,6 +101,11 @@ test("CLI subcommand help and MCP host opt-in", async () => {
     expect(output).toContain(`Usage: agentic-realtime ${args.join(" ")} --doc <id>`);
     expect(output).toContain(args[1] === "delete" ? "--confirm <id>" : args[1] === "role" ? "--role owner|editor|commenter|viewer|null" : args[1] === "revoke" ? "--principal <id>" : "Prints JSON");
   }
+  const applyHelp = await new Promise<string>((resolve, reject) => execFile(
+    "node", ["dist/cli.js", "doc", "apply", "--help"],
+    (error, out) => error ? reject(error) : resolve(out),
+  ));
+  for (const flag of ["--mode", "--at", "--name"]) expect(applyHelp).toContain(flag);
   const client = new Client({ name: "parity", version: "1" });
   await client.connect(new StdioClientTransport({ command: "node", args: ["dist/cli.js", "mcp"],
     env: { ...environment("editor2"), AGENTIC_SYNC_ENABLE_ADMIN: "0" } }));
