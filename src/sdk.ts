@@ -259,7 +259,6 @@ export const revokePrincipal = (target: AdminTarget, docId: string, principalId:
 export const setPrincipalRole = (target: AdminTarget, docId: string, principalId: string, role: Role | null) =>
   admin(target, docId, "role", { principalId, role }) as Promise<{ ok: true }>;
 
-
 // Bound clients reuse the route functions and their server-side permission checks.
 export const createDocumentClient = (target: Target) => ({
   exportDocument: (docId: string) => exportDocument(target, docId),

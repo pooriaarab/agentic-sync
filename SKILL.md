@@ -40,7 +40,6 @@ server environment. The Worker checks authority. Never give an agent the host se
 SDK createDocumentClient({ server, token }) and createAdminClient({ server, secret })
 provide typed methods for the same routes. null lifts a role cap or revoke.
 
-
 ## Rules
 
 - The host owns auth. Pass an `authorize` hook.
