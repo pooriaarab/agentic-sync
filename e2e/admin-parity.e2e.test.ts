@@ -108,7 +108,6 @@ test("CLI subcommand help and MCP host opt-in", async () => {
   finally { await client.close(); }
 });
 
-
 test("CLI help-like text values are edits", async () => {
   for (const text of ["-h", "--help"]) {
     await new Promise<void>((resolve, reject) => execFile("node", ["dist/cli.js", "doc", "apply", "--doc", "HelpText", "--root", "body", "--text", text],
@@ -117,7 +116,6 @@ test("CLI help-like text values are edits", async () => {
   const { getDoc } = await import("../src/sdk.js");
   expect(await getDoc({ server: server.http, token: "agent" }, "HelpText")).toEqual({ body: "-h--help" });
 });
-
 
 test("Worker rejects invalid admin input even without surface validation", async () => {
   for (const [action, body, code] of [
