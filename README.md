@@ -7,7 +7,7 @@
 
 Live edits for people and agents on one document, with offline support.
 
-> Status: 0.5.0 preview. Most features below have an end-to-end test.
+> Status: 0.6.0 preview. Most features below have an end-to-end test.
 > Hibernation, the no-outbound-calls rule, and EU placement do not.
 
 ## Install
@@ -239,8 +239,9 @@ agentic-realtime doc blame --doc notes --root body
 ```
 
 Commands print JSON. Most commands join the document, do one job, and leave.
-Export, delete, and host commands use HTTP without joining. `doc snapshot` without `--name` lists the snapshots. A refused edit exits with 1 and
-prints the reason. `--name` sets the name you show in presence, except for `snapshot`
+Export, delete, and host commands use HTTP without joining. `doc snapshot`
+without `--name` lists the snapshots. A refused edit exits with 1 and prints
+the reason. `--name` sets the name you show in presence, except for `snapshot`
 and `restore`, where it is the snapshot name. The server takes
 your role, your kind, and your author label from the token. The CLI has no
 `--kind` flag. `doc apply` edits text roots and empty roots only. It refuses a

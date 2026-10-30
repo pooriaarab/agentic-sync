@@ -36,7 +36,7 @@ async function surface(kind: string, token = "editor2", hostSecret = secret) {
         const args = [admin ? "admin" : "doc", action, "--doc", doc];
         if (action === "delete") args.push("--confirm", extra.confirm ?? doc);
         if (extra.principalId !== undefined) args.push("--principal", extra.principalId);
-        if ("role" in extra) args.push("--role", String(extra.role));
+        if (action === "role" && "role" in extra) args.push("--role", String(extra.role));
         return new Promise((resolve, reject) => execFile("node", ["dist/cli.js", ...args],
           { env: environment(token, hostSecret) }, (error, out, err) => error ? reject(new Error(err)) : resolve(JSON.parse(out))));
       }

@@ -46,6 +46,18 @@ export function parseArgs(argv: string[]): CliRequest {
     }
     flags[flag] = value;
   }
+  const allowed: Record<string, string[]> = first === "admin" ? {
+    export: [], delete: ["confirm"], revoke: ["principal"], role: ["principal", "role"],
+  } : {
+    get: ["name"], apply: ["root", "text", "file", "mode", "at", "name"],
+    snapshot: ["name"], restore: ["name"], presence: ["wait", "name"],
+    blame: ["root", "snapshot", "name"], export: [], delete: ["confirm"],
+  };
+  for (const flag of Object.keys(flags)) {
+    if (flag !== "doc" && flag !== "server" && !allowed[sub].includes(flag)) {
+      throw new UsageError(`--${flag} is not valid for ${first} ${sub}`);
+    }
+  }
   if (flags.mode !== undefined && !sdk.EDIT_MODES.includes(flags.mode as sdk.EditMode)) {
     throw new UsageError(`--mode is one of ${sdk.EDIT_MODES.join(", ")}`);
   }

@@ -2,8 +2,11 @@
 
 ## 0.6.0
 
-Upgrading from 0.5.0 needs no code change.
+Upgrading from 0.5.0 exposes the destructive MCP `doc_delete` tool by default.
+An owner token lets an MCP client erase a document. Use a token with a lower
+role if the client must not delete documents.
 
+- Accept `agentic-identity` versions `>=0.9.0 <0.11.0`.
 - Add typed SDK owner and host clients.
 - Add CLI owner delete and host export, delete, revoke, and role commands.
 - Add MCP owner delete and opt-in host tools with schemas and Worker checks.
