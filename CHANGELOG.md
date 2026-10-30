@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.0
+
+Upgrading from 0.4.4 needs no code change.
+
+### Added
+
+- `SyncClient` methods: `exportDocument`, `deleteDocument`, `revokePrincipal`,
+  and `setPrincipalRole`. Host calls take an explicit secret per call.
+- Owner-only `doc export` in the CLI and read-only `doc_export` in MCP. Both
+  return the stored history as a JSON array. Delete, revoke, and role changes
+  stay client/SDK-only to keep host secrets out of agent tools.
+
 ## 0.4.4
 
 Upgrading from 0.4.3 needs no code change.

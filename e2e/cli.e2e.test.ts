@@ -49,6 +49,23 @@ describe("the agentic-realtime CLI", () => {
     expect(json((await cli(["doc", "snapshot", "--doc", "c1"])).out).map((s: any) => s.name)).toEqual(["s1"]);
   });
 
+  test("export uses owner credentials and rejects unsafe commands", async () => {
+    await cli(["doc", "apply", "--doc", "ExportCase", "--root", "body", "--text", "history"]);
+    const exported = await cli(["doc", "export", "--doc", "ExportCase"], "editor2");
+    expect(exported.code).toBe(0);
+    const records = json(exported.out);
+    expect(records[0]).toMatchObject({ type: "meta" });
+    expect(records.find((r: any) => r.type === "update").author).toMatchObject({ kind: "agent_of_human" });
+    for (const token of ["editor", "viewer", "nobody"]) {
+      const denied = await cli(["doc", "export", "--doc", "ExportCase"], token);
+      expect(denied.code).toBe(1);
+      expect(denied.out).toBe("");
+    }
+    for (const action of ["delete", "revoke", "role"]) {
+      expect((await cli(["doc", action, "--doc", "ExportCase"])).code).toBe(2);
+    }
+  });
+
   test("a snapshot name that is not a safe peer name still saves and restores", async () => {
     const name = "_" + "draft-".repeat(10);
     await cli(["doc", "apply", "--doc", "c2", "--root", "body", "--text", "one"]);
@@ -194,7 +211,7 @@ describe("the agentic-realtime MCP server over stdio", () => {
     };
     const agent = await connect("agent");
     const tools = (await agent.listTools()).tools.map((t) => t.name).sort();
-    expect(tools).toEqual(["doc_apply", "doc_blame", "doc_get", "doc_presence", "doc_restore", "doc_snapshot", "doc_snapshots"]);
+    expect(tools).toEqual(["doc_apply", "doc_blame", "doc_export", "doc_get", "doc_presence", "doc_restore", "doc_snapshot", "doc_snapshots"]);
 
     await call(agent, "doc_apply", { doc: "m1", root: "body", text: "one" });
     await call(agent, "doc_snapshot", { doc: "m1", name: "first" });
@@ -206,9 +223,19 @@ describe("the agentic-realtime MCP server over stdio", () => {
     const blamed = (await call(agent, "doc_blame", { doc: "m1", root: "body" })).body;
     expect(blamed.length).toBeGreaterThan(0);
     expect(blamed.every((span: any) => span.author.machine === true)).toBe(true);
+    expect((await call(agent, "doc_export", { doc: "m1" })).error).toBe(true);
+    const owner = await connect("editor2");
+    const exportTool = (await owner.listTools()).tools.find((t) => t.name === "doc_export");
+    expect(exportTool?.annotations?.readOnlyHint).toBe(true);
+    const exported = await call(owner, "doc_export", { doc: "m1" });
+    expect(exported.error).toBe(false);
+    expect(exported.body[0]).toMatchObject({ type: "meta" });
+    expect(exported.body.find((r: any) => r.type === "snapshot").author.kind).toBe("agent_of_human");
+    await owner.close();
     await agent.close();
 
     const viewer = await connect("viewer");
+    expect((await call(viewer, "doc_export", { doc: "m1" })).body.error).toContain("OWNER_ONLY");
     const refused = await call(viewer, "doc_apply", { doc: "m1", root: "body", text: "no" });
     expect(refused.error).toBe(true);
     expect(refused.body.error).toContain("read-only role");

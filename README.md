@@ -7,7 +7,7 @@
 
 Live edits for people and agents on one document, with offline support.
 
-> Status: 0.4.4 preview. Most features below have an end-to-end test.
+> Status: 0.5.0 preview. Most features below have an end-to-end test.
 > Hibernation, the no-outbound-calls rule, and EU placement do not.
 
 ## Install
@@ -225,6 +225,7 @@ export AGENTIC_SYNC_URL=https://sync.example.com
 export AGENTIC_SYNC_TOKEN=...   # sent as a bearer token
 agentic-realtime doc apply --doc notes --root body --text "Hello"
 agentic-realtime doc get --doc notes
+agentic-realtime doc export --doc notes  # owners only; JSON array
 agentic-realtime doc snapshot --doc notes --name before-review
 agentic-realtime doc restore --doc notes --name before-review
 agentic-realtime doc presence --doc notes
@@ -241,7 +242,7 @@ rich-text, map, or array root and exits with 1, so it never deletes a document.
 
 ## Use the MCP server
 
-`agentic-realtime mcp` serves these tools over stdio: `doc_get`, `doc_apply`,
+`agentic-realtime mcp` serves these tools over stdio: `doc_get`, `doc_export`, `doc_apply`,
 `doc_snapshot`, `doc_snapshots`, `doc_restore`, `doc_blame`, and `doc_presence`. Set
 `AGENTIC_SYNC_URL`, `AGENTIC_SYNC_TOKEN`, and optionally `AGENTIC_SYNC_NAME` in
 the server environment. A tool call never carries a credential. `doc_apply`
@@ -291,8 +292,21 @@ snapshots, the attribution logs, the caps and bans, and the timer. The document 
 then starts empty, and a new writer starts a new history. A delete needs `confirm`
 with the document id in its body, so a stray call does nothing.
 
-The package has no CLI or MCP command for either call, as for a revoke. An agent
-must not delete a document, and it must not hold the host secret.
+The CLI `doc export --doc <id>` and MCP `doc_export` use the owner token from
+`AGENTIC_SYNC_TOKEN`. Both return a JSON array and hold the full export in memory.
+Other roles get `OWNER_ONLY`. The MCP tool has a read-only hint.
+
+`SyncClient` has `exportDocument()` and `deleteDocument()` for owners. They use
+the document URL and credentials from `connect` or `open`. Call `flush()` before
+export to include local edits. Export does not join or write to the document.
+The host backend can call `revokePrincipal(secret, principalId)` and
+`setPrincipalRole(secret, principalId, role)`. Pass `null` to lift a cap or ban.
+The secret is passed per call and is not stored on the client.
+
+Delete, revoke, and role changes stay client/SDK-only. The CLI and MCP have no
+commands for them and do not read a host secret. This keeps destructive calls
+and host credentials out of agent tools. An agent must not delete a document,
+and it must not hold the host secret.
 
 ## See who wrote what
 
@@ -445,7 +459,7 @@ Host and agent calls over HTTP. See the sections above for the flows.
 
 | Name | What it is |
 | --- | --- |
-| `Target` (type), `AdminTarget` (type) | Types. `Target` is `{ server, token?, name? }`. `AdminTarget` is `{ server, secret }`. |
+| `Target` (type), `AdminTarget` (type) | Types. `Target` is `{ server, token?, name?, headers? }`. Export and delete forward `headers`; `token` takes precedence. `AdminTarget` is `{ server, secret }`. |
 | `EDIT_MODES`, `EditMode` (type) | The text edit modes: `append`, `replace`, `insert`. |
 | `withDoc(target, docId, job)` | Joins a document, runs `job` with the connected client, and always leaves. `getDoc`, `applyText`, the snapshot calls, `blame` without a snapshot and `listPeers` use it. |
 | `getDoc(target, docId)` | Reads the roots of a document as plain JSON. |

@@ -11,14 +11,16 @@ connect and with what role.
 ## What exists now
 
 - `agentic-realtime/worker`: `createSyncWorker({ authorize })` and `SyncRoom`.
-- `agentic-realtime/client`: `SyncClient` (`connect`, `edit`, `peers`, `snapshot`, `restore`).
+- `agentic-realtime/client`: `SyncClient` (`connect`, `edit`, `peers`, `snapshot`, `restore`,
+  `exportDocument`, `deleteDocument`, `revokePrincipal`, `setPrincipalRole`).
 - `agentic-realtime/browser`: `openDocument` (IndexedDB, reconnect) and `peerLabel`.
 - `agentic-realtime`: protocol helpers, the `Realtime` interface, and the types.
-- `agentic-realtime` CLI and `agentic-realtime mcp`: `doc get|apply|snapshot|restore|presence|blame`.
+- `agentic-realtime` CLI and `agentic-realtime mcp`: `doc get|apply|snapshot|restore|presence|blame|export`.
 - `examples/host`: a runnable host with token sign-in. `npm run example`.
 - `agentic-realtime/sdk`: the same operations as functions, and the host calls
   `revokePrincipal`, `setPrincipalRole`, `exportDocumentAsHost`, `deleteDocumentAsHost`, and
-  the owner calls `exportDocument` and `deleteDocument`. Never put those in the CLI or MCP.
+  the owner calls `exportDocument` and `deleteDocument`. Only owner export is in
+  the CLI and MCP. Delete, revoke, and role changes stay client/SDK-only.
   An agent must not hold the host secret.
 
 ## Rules

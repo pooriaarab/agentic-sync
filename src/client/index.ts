@@ -4,6 +4,7 @@ import * as auth from "y-protocols/auth";
 import * as awarenessProtocol from "y-protocols/awareness";
 import * as sync from "y-protocols/sync";
 import * as Y from "yjs";
+import * as sdk from "../sdk.js";
 import {
   awarenessMessage,
   MESSAGE_AUTH,
@@ -16,7 +17,7 @@ import { restoreState } from "../core/history.js";
 import { AwayTracker, readAwayState, type AwayState } from "../core/away.js";
 import { peerColor, safePeerColor } from "../core/colors.js";
 import { assertSafePeerName, displayPeerName } from "../core/names.js";
-import { isMachineKind, type PrincipalKind, type SnapshotInfo } from "../core/types.js";
+import { isMachineKind, type PrincipalKind, type Role, type SnapshotInfo } from "../core/types.js";
 
 // What a client shows to the others. Do not put personal data here.
 // The client sets no kind. The server adds it from the grant.
@@ -300,6 +301,43 @@ export class SyncClient {
     const response = await fetch(url, { ...init, headers });
     if (!response.ok) throw new Error(`request failed: ${response.status}`);
     return response;
+  }
+
+  // Derive the HTTP target from the document socket, including a host path
+  // prefix and query credentials. Header credentials take precedence.
+  private httpTarget(host = false): { target: sdk.Target; docId: string } {
+    const url = new URL(this.options.url);
+    const match = /^(.*)\/api\/v1\/docs\/([^/]+)\/ws$/.exec(url.pathname);
+    if (!match) throw new Error("expected a document WebSocket URL");
+    url.protocol = url.protocol === "wss:" ? "https:" : "http:";
+    url.pathname = match[1] || "/";
+    // Host routes use only the explicit secret, never socket query credentials.
+    if (host) url.search = "";
+    return { target: { server: url.toString(), headers: this.options.headers }, docId: decodeURIComponent(match[2]) };
+  }
+
+  // Export stored history. Owners only. Local edits must be flushed first.
+  exportDocument(): Promise<sdk.ExportRecord[]> {
+    const { target, docId } = this.httpTarget();
+    return sdk.exportDocument(target, docId);
+  }
+
+  // Erase stored history and close all sockets. Owners only; cannot be undone.
+  deleteDocument(): Promise<{ deleted: true; sockets: number }> {
+    const { target, docId } = this.httpTarget();
+    return sdk.deleteDocument(target, docId);
+  }
+
+  // Host backend only. Pass the secret for this call; never give it to agents.
+  revokePrincipal(secret: string, principalId: string): Promise<{ closed: number }> {
+    const { target, docId } = this.httpTarget(true);
+    return sdk.revokePrincipal({ server: target.server, secret }, docId, principalId);
+  }
+
+  // A null role lifts a cap or revoke. Keep the host secret in your backend.
+  setPrincipalRole(secret: string, principalId: string, role: Role | null) {
+    const { target, docId } = this.httpTarget(true);
+    return sdk.setPrincipalRole({ server: target.server, secret }, docId, principalId, role);
   }
 
   // Saves the document as it is now, with your local edits, under a name.
